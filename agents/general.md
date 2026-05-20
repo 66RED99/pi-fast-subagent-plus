@@ -1,6 +1,6 @@
 ---
 name: general
-description: General-purpose helper for coding, analysis, writing, debugging, and task execution
+description: Use this when no specialized subagent clearly fits the task.
 model: anthropic/claude-haiku-4-5
 
 # tools: which tools this agent can use.
