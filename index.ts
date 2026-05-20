@@ -12,7 +12,6 @@ import { randomUUID } from "node:crypto";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 import { Theme } from "@mariozechner/pi-coding-agent";
-import { Key } from "@mariozechner/pi-tui";
 
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { BackgroundJobManager } from "./background-job-manager.js";
@@ -97,6 +96,21 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
+  pi.on("before_agent_start", async (event, ctx) => {
+    const agents = discoverAgents(ctx.cwd);
+    if (agents.length === 0) return;
+
+    const agentList = agents
+      .map((agent) => `- **${agent.name}**: ${agent.description}`)
+      .join("\n");
+
+    return {
+      systemPrompt:
+        event.systemPrompt +
+        `\n\n## Available Subagents\n\nThe following subagents are available via the \`subagent\` tool:\n\n${agentList}\n\n### How to use subagent\n\n- Use \`subagent\` to delegate work to one or more of the available subagents above when specialized help is useful.\n- Use single-agent mode for one focused delegated task.\n- Use parallel mode when multiple delegated tasks are independent.\n- Use \`{ action: "list" }\` if you need to inspect available agents before choosing one.\n`,
+    };
+  });
+
   pi.on("session_shutdown", async () => {
     getBgManager().shutdown();
     _bgManager = null;
@@ -104,8 +118,8 @@ export default function (pi: ExtensionAPI) {
     defaultLoaderPool.clear();
   });
 
-  // ─── Ctrl+Shift+B — detach foreground subagent ────────────────────────────
-  pi.registerShortcut(Key.ctrlShift("b"), {
+  // ─── Alt+Shift+B — detach foreground subagent ────────────────────────────
+  pi.registerShortcut("alt+shift+b", {
     description: "Move foreground subagent to background",
     handler: async (ctx) => {
       const entry = [..._fgJobs.values()][0];
@@ -150,6 +164,7 @@ export default function (pi: ExtensionAPI) {
           `File: ${agent.filePath}`,
           `Description: ${agent.description}`,
           agent.model ? `Model: ${agent.model}` : "",
+          agent.thinking ? `Thinking: ${agent.thinking}` : "",
           `Tools: ${formatTools(agent.tools)}`,
           `Max subagent depth: ${agent.maxDepth}`,
           agent.systemPrompt ? `\nSystem prompt:\n${agent.systemPrompt}` : "",
@@ -164,7 +179,7 @@ export default function (pi: ExtensionAPI) {
           "Add .md files to:\n" +
           "  ~/.pi/agent/agents/   (user-level)\n" +
           "  .pi/agents/           (project-level)\n" +
-          "\nFrontmatter required: name, description. Optional: model, tools, maxDepth.",
+          "\nFrontmatter required: name, description. Optional: model, thinking, tools, maxDepth.",
           "info",
         );
         return;
@@ -501,6 +516,7 @@ export default function (pi: ExtensionAPI) {
             running: false,
             elapsedMs: undefined,
             model: result.model,
+            thinking: agent.thinking,
             toolCalls: result.toolCalls,
             executionEvents: result.executionEvents,
           } satisfies SubagentDetails,
@@ -510,10 +526,11 @@ export default function (pi: ExtensionAPI) {
 
       // ── Parallel mode ───────────────────────────────────────────────────
       if (params.tasks && params.tasks.length > 0) {
-        const expanded: Array<{ agent: string; task: string; model?: string; cwd?: string }> = [];
+        const agentByName = new Map(agents.map((a) => [a.name, a]));
+        const expanded: Array<{ agent: string; task: string; model?: string; thinking?: string; cwd?: string }> = [];
         for (const t of params.tasks) {
           const n = t.count ?? 1;
-          for (let i = 0; i < n; i++) expanded.push({ agent: t.agent, task: t.task, model: t.model, cwd: t.cwd });
+          for (let i = 0; i < n; i++) expanded.push({ agent: t.agent, task: t.task, model: t.model, thinking: agentByName.get(t.agent)?.thinking, cwd: t.cwd });
         }
 
         const concurrency = params.concurrency ?? 4;
@@ -522,6 +539,7 @@ export default function (pi: ExtensionAPI) {
           name: t.agent,
           taskSummary: t.task.length > 60 ? t.task.slice(0, 57) + "..." : t.task,
           status: "pending" as const,
+          thinking: t.thinking,
         }));
         let runningUsage = { ...emptyUsage };
 
@@ -546,6 +564,7 @@ export default function (pi: ExtensionAPI) {
           const agentOnUpdate: OnUpdate = (partial) => {
             const d = partial.details as SubagentDetails | undefined;
             parallelAgents[i]!.toolCalls = d?.toolCalls ? [...d.toolCalls] : parallelAgents[i]!.toolCalls;
+            parallelAgents[i]!.thinking = d?.thinking ?? parallelAgents[i]!.thinking;
             parallelAgents[i]!.responseText = (partial.content?.[0] as any)?.text || parallelAgents[i]!.responseText;
             emitParallel(true);
           };

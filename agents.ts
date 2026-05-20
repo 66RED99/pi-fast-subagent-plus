@@ -23,6 +23,7 @@ import { getAgentDir, parseFrontmatter } from "@mariozechner/pi-coding-agent";
  *   string[]     → allowlist
  */
 export type AgentTools = "builtins" | "all" | "none" | string[];
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export const BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
@@ -30,6 +31,7 @@ export interface AgentConfig {
   name: string;
   description: string;
   model?: string;
+  thinking?: ThinkingLevel;
   tools: AgentTools;
   /** Number of nested subagent generations this agent may spawn. Default: 0. */
   maxDepth: number;
@@ -60,6 +62,20 @@ export function parseToolsField(raw: unknown): AgentTools {
   return list.length ? list : "all";
 }
 
+export function parseThinkingField(raw: unknown): ThinkingLevel | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const str = String(raw).trim().toLowerCase();
+  if (!str) return undefined;
+  if (str === "off" || str === "minimal" || str === "low" || str === "medium" || str === "high" || str === "xhigh") {
+    return str;
+  }
+  if (str === "min") return "minimal";
+  if (str === "med") return "medium";
+  if (str === "hi") return "high";
+  if (str === "xhi") return "xhigh";
+  return undefined;
+}
+
 export function parseMaxDepthField(raw: unknown): number {
   if (raw === undefined || raw === null || raw === "") return 0;
   const n = Number(raw);
@@ -86,6 +102,9 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
       const { frontmatter, body } = parseFrontmatter<Record<string, string>>(content);
       if (!frontmatter?.name || !frontmatter?.description) continue;
       const tools = parseToolsField(frontmatter.tools);
+      const thinking = parseThinkingField(
+        frontmatter.thinking ?? frontmatter.thinkingLevel ?? frontmatter.thinking_level,
+      );
       const maxDepth = parseMaxDepthField(
         frontmatter.maxDepth ?? frontmatter.max_depth ?? frontmatter.depth ?? frontmatter.subagentDepth,
       );
@@ -93,6 +112,7 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
         name: frontmatter.name,
         description: frontmatter.description,
         model: frontmatter.model,
+        thinking,
         tools,
         maxDepth,
         systemPrompt: body.trim(),

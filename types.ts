@@ -31,6 +31,7 @@ export interface AgentRowStatus {
   taskSummary: string;
   status: "pending" | "running" | "done" | "error";
   durMs?: number;
+  thinking?: string;
   toolCalls?: ToolCallEntry[];
   responseText?: string;
 }
@@ -44,6 +45,7 @@ export interface SubagentDetails {
   running: boolean;
   elapsedMs?: number;
   model?: string;
+  thinking?: string;
   backgroundJobId?: string;
   toolCalls: ToolCallEntry[];
   executionEvents?: ExecutionEvent[];

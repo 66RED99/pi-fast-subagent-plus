@@ -1,6 +1,6 @@
-# pi-fast-subagent
+# pi-fast-subagent-plus
 
-In-process subagent delegation for [pi](https://github.com/badlogic/pi-mono) with max visibility.
+In-process subagent delegation for [pi](https://github.com/badlogic/pi-mono) with prompt-guided automatic routing.
 
 Runs subagents with `createAgentSession()` in same process instead of spawning `pi` subprocesses. This removes subprocess cold-start and reuses pi auth/model registry.
 
@@ -11,6 +11,8 @@ Runs subagents with `createAgentSession()` in same process instead of spawning `
 - Background mode: `{ agent, task, background: true }` — fire-and-forget with poll/cancel
 - Slash commands for background job status + cancellation via selector UI
 - Per-call model override
+- Per-agent thinking levels
+- Parent `before_agent_start` prompt injection with discovered subagents
 - User + project agent discovery
 - Project agents override user agents
 - Max nesting depth guard
@@ -37,13 +39,13 @@ Configure preview sizes in `~/.pi/agent/settings.json` or `.pi/settings.json`:
 ## Install
 
 ```bash
-pi install /absolute/path/to/pi-fast-subagent
+pi install /absolute/path/to/pi-fast-subagent-plus
 ```
 
-Or from npm after publish:
+Recommended after publishing to GitHub:
 
 ```bash
-pi install npm:pi-fast-subagent
+pi install git:github.com/YOUR_GITHUB_USER/pi-fast-subagent-plus
 ```
 
 ## Package contents
@@ -54,9 +56,8 @@ This package exposes one pi extension:
 
 ## Included agents
 
-This package bundles default agents:
+This package bundles one default agent:
 
-- `scout` — code exploration specialist
 - `general` — general-purpose helper
 
 Discovery priority:
@@ -72,12 +73,14 @@ Example override agent file:
 
 ```md
 ---
-name: scout
-description: Explore codebases and summarize findings
-model: anthropic/claude-haiku-4-5
+name: explorer
+description: Codebase Explorer, Use this whenever codebase has to be explored or to gather context
+model: openai-codex/gpt-5.4-mini
+thinking: medium
+tools: read,grep,find,ls
 ---
 
-You are code exploration specialist. Read relevant files, trace data flow, summarize findings clearly.
+You are a fast codebase explorer. Find relevant files, summarize structure, and point to exact paths and symbols.
 ```
 
 ### Agent frontmatter
@@ -87,6 +90,7 @@ You are code exploration specialist. Read relevant files, trace data flow, summa
 | `name` | yes | Unique agent identifier used in `subagent({ agent: "..." })` |
 | `description` | yes | One-line description shown in `/fast-subagent:agent` |
 | `model` | no | Model override, format `provider/model-id` (e.g. `anthropic/claude-haiku-4-5`) |
+| `thinking` | no | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 | `tools` | no | Tool allowlist (see below) |
 | `maxDepth` | no | Nested subagent depth this agent may spawn. Default `0` means this agent cannot call `subagent`. |
 
@@ -104,6 +108,8 @@ Controls which tools the subagent has access to. The default is **all tools** �
 
 Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
 
+`thinking` is optional. If omitted, Pi uses its normal default thinking behavior for the child session.
+
 Examples:
 
 ```md
@@ -116,7 +122,7 @@ tools: none
 
 ```md
 ---
-name: scout
+name: explorer
 description: Read-only code explorer
 # drop `edit` and `write` so the agent cannot mutate the codebase
 tools: read, bash, grep, find, ls
@@ -143,7 +149,7 @@ tools: all
 
 > **Performance note:** omitted `tools` / `tools: all` loads every installed pi extension into the subagent session. That adds startup cost (extension init, possibly MCP server spawn, playwright runtime, …) and token cost (bigger system prompt). Use `tools: builtins` or list specific tools for tight, focused agents.
 
-**YAML comments** (`# …`) are allowed inside the frontmatter — handy for documenting *why* a particular tool set was chosen. See `agents/general.md` and `agents/scout.md` for examples.
+**YAML comments** (`# …`) are allowed inside the frontmatter — handy for documenting *why* a particular tool set was chosen. See `agents/general.md` for an included example.
 
 ### `maxDepth:` field
 
@@ -175,7 +181,7 @@ Every foreground subagent can be moved to background at any time. Background job
 
 While a foreground subagent is running, the pi status bar shows:
 ```
-{agent-name} running · Ctrl+Shift+B to move to background
+{agent-name} running · Alt+Shift+B to move to background
 ```
 
 While background jobs are running:
@@ -187,7 +193,7 @@ While background jobs are running:
 
 **Keyboard shortcut (while subagent is running):**
 ```
-Ctrl+Shift+B
+Alt+Shift+B
 ```
 
 **Slash command:**
@@ -204,7 +210,7 @@ subagent({ action: "detach", jobId: "fg_ab12cd34" })
 
 When a background job finishes, pi injects a follow-up message automatically:
 ```
-Background subagent ✓: sa_ab12cd34 (scout, 4.2s)
+Background subagent ✓: sa_ab12cd34 (explorer, 4.2s)
 > Explore src and summarize architecture
 
 <result output>
@@ -225,7 +231,7 @@ List all available agents:
 Show details for a specific agent (description, file path, model, tools, system prompt):
 
 ```
-/fast-subagent:agent scout
+/fast-subagent:agent explorer
 ```
 
 Tab-completion is supported for agent names.
@@ -276,7 +282,7 @@ Cancel a specific job directly:
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+Shift+B` | Move active foreground subagent to background |
+| `Alt+Shift+B` | Move active foreground subagent to background |
 
 ## Roadmap
 
@@ -302,7 +308,7 @@ Goal: keep this extension **small and focused** — aligned with pi's philosophy
 subagent({ action: "list" })
 
 // Get details for a specific agent
-subagent({ action: "get", agent: "scout" })
+subagent({ action: "get", agent: "explorer" })
 
 // Scope filter: "user" | "project" | "both" (default)
 subagent({ action: "list", agentScope: "project" })
@@ -311,7 +317,7 @@ subagent({ action: "list", agentScope: "project" })
 ### Single
 
 ```js
-subagent({ agent: "scout", task: "Explore src and summarize architecture" })
+subagent({ agent: "explorer", task: "Explore src and summarize architecture" })
 ```
 
 ### Parallel
@@ -319,21 +325,21 @@ subagent({ agent: "scout", task: "Explore src and summarize architecture" })
 ```js
 subagent({
   tasks: [
-    { agent: "scout", task: "Map auth flow" },
-    { agent: "scout", task: "Map navigation" }
+    { agent: "explorer", task: "Map auth flow" },
+    { agent: "researcher", task: "Check auth docs online" }
   ],
   concurrency: 2  // default: 4
 })
 
 // Repeat one task N times
-subagent({ tasks: [{ agent: "scout", task: "Explore src", count: 3 }] })
+subagent({ tasks: [{ agent: "explorer", task: "Explore src", count: 3 }] })
 ```
 
 ### Background
 
 ```js
 // Fire-and-forget — returns job ID immediately
-subagent({ agent: "scout", task: "Explore src", background: true })
+subagent({ agent: "explorer", task: "Explore src", background: true })
 // → { jobId: "sa_ab12cd34", status: "running" }
 
 subagent({ action: "poll",   jobId: "sa_ab12cd34" })  // check progress
@@ -345,21 +351,22 @@ subagent({ action: "detach", jobId: "fg_ab12cd34" })  // move fg → bg
 ### Options
 
 ```js
-subagent({ agent: "scout", task: "...", model: "anthropic/claude-haiku-4-5" })
-subagent({ agent: "scout", task: "...", cwd: "/path/to/project" })
+subagent({ agent: "explorer", task: "...", model: "openai-codex/gpt-5.4-mini" })
+subagent({ agent: "explorer", task: "...", cwd: "/path/to/project" })
 ```
 
 ## Publish
 
+Push the package to GitHub, then install it in Pi with:
+
 ```bash
-cd ~/.pi/agent/extensions/fast-subagent
-npm publish
+pi install git:github.com/YOUR_GITHUB_USER/pi-fast-subagent-plus
 ```
 
-If package name is taken, rename `name` in `package.json` first, usually with your npm scope:
+If you also publish to npm, the package name is:
 
 ```json
 {
-  "name": "@your-scope/pi-fast-subagent"
+  "name": "pi-fast-subagent-plus"
 }
 ```

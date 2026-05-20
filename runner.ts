@@ -109,6 +109,7 @@ export async function runAgent(
       running: true,
       elapsedMs: 0,
       model: modelOverride ?? agent.model,
+      thinking: agent.thinking,
       toolCalls: [],
     } satisfies SubagentDetails,
   });
@@ -123,6 +124,16 @@ export async function runAgent(
     agent.systemPrompt || undefined,
   );
 
+  const modelStr = modelOverride ?? agent.model;
+  let resolvedModel: ReturnType<typeof modelRegistry.find> | undefined = undefined;
+  if (modelStr) {
+    const [provider, ...rest] = modelStr.split("/");
+    const modelId = rest.join("/");
+    if (provider && modelId) {
+      resolvedModel = modelRegistry.find(provider, modelId) ?? undefined;
+    }
+  }
+
   let session: Awaited<ReturnType<typeof createAgentSession>>["session"];
   try {
     const created = await createAgentSession({
@@ -131,6 +142,8 @@ export async function runAgent(
       sessionManager: SessionManager.inMemory(cwd),
       authStorage,
       modelRegistry,
+      model: resolvedModel,
+      thinkingLevel: agent.thinking,
       resourceLoader: loaderLease.loader,
     });
     session = created.session;
@@ -148,17 +161,6 @@ export async function runAgent(
   }
   if (createPrevEnvDepth === undefined) delete process.env[DEPTH_ENV];
   else process.env[DEPTH_ENV] = createPrevEnvDepth;
-
-  // Resolve and apply model
-  const modelStr = modelOverride ?? agent.model;
-  if (modelStr) {
-    const [provider, ...rest] = modelStr.split("/");
-    const modelId = rest.join("/");
-    if (provider && modelId) {
-      const model = modelRegistry.find(provider, modelId);
-      if (model) await session.setModel(model);
-    }
-  }
 
   // Apply tools allowlist.
   //   "all"    → no restriction (everything registered stays active)
@@ -193,6 +195,7 @@ export async function runAgent(
         running: true,
         elapsedMs: Date.now() - startedAt,
         model: detectedModel ?? configuredModel,
+        thinking: agent.thinking,
         toolCalls: [...toolCalls],
         executionEvents: [...executionEvents],
       } satisfies SubagentDetails,
@@ -302,6 +305,7 @@ export async function runAgent(
         running: true,
         elapsedMs: Date.now() - startedAt,
         model: detectedModel ?? configuredModel,
+        thinking: agent.thinking,
         toolCalls: [...toolCalls],
         executionEvents: [...executionEvents],
       } as unknown as SubagentDetails,

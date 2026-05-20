@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { parseMaxDepthField, parseToolsField } from "../agents.ts";
+import { parseMaxDepthField, parseThinkingField, parseToolsField } from "../agents.ts";
 
 describe("parseToolsField", () => {
   it("defaults to 'all' when unset/empty/whitespace", () => {
@@ -31,6 +31,34 @@ describe("parseToolsField", () => {
     assert.deepEqual(parseToolsField("read, , bash"), ["read", "bash"]);
     assert.equal(parseToolsField(","), "all");
     assert.equal(parseToolsField(" , , "), "all");
+  });
+});
+
+describe("parseThinkingField", () => {
+  it("defaults to undefined when missing/empty", () => {
+    assert.equal(parseThinkingField(undefined), undefined);
+    assert.equal(parseThinkingField(null), undefined);
+    assert.equal(parseThinkingField(""), undefined);
+    assert.equal(parseThinkingField("   "), undefined);
+  });
+
+  it("accepts canonical levels case-insensitively", () => {
+    assert.equal(parseThinkingField("off"), "off");
+    assert.equal(parseThinkingField("LOW"), "low");
+    assert.equal(parseThinkingField("medium"), "medium");
+    assert.equal(parseThinkingField("xhigh"), "xhigh");
+  });
+
+  it("accepts common shorthand aliases", () => {
+    assert.equal(parseThinkingField("min"), "minimal");
+    assert.equal(parseThinkingField("med"), "medium");
+    assert.equal(parseThinkingField("hi"), "high");
+    assert.equal(parseThinkingField("xhi"), "xhigh");
+  });
+
+  it("returns undefined for invalid values", () => {
+    assert.equal(parseThinkingField("maybe"), undefined);
+    assert.equal(parseThinkingField("42"), undefined);
   });
 });
 

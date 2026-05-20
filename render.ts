@@ -18,6 +18,10 @@ import type { ExecutionEvent } from "./types.js";
 const DEFAULT_PREVIEW_LINES = 12;
 const DEFAULT_PROMPT_PREVIEW_LINES = 12;
 
+export function formatThinkingLabel(thinking?: string): string {
+  return thinking ? `thinking:${thinking}` : "";
+}
+
 /**
  * From an ordered event log, find tool calls that ran AFTER the last text_delta.
  * Returns { trailingToolIds, hasAnyText }. When no text has been emitted yet,
@@ -225,10 +229,11 @@ export function renderSubagentResult(
           const mark = a.status === "pending" ? theme.fg("dim", "⋅")
             : a.status === "running" ? theme.fg("dim", "→")
             : a.status === "done" ? `✓${dur}` : `✗${dur}`;
+          const thinking = a.thinking ? ` · thinking:${a.thinking}` : "";
 
           if (expanded) {
             out.push("");
-            out.push(truncateToWidth(`[${a.name}] ${mark}`, width, "..."));
+            out.push(truncateToWidth(`[${a.name}] ${mark}${thinking}`, width, "..."));
             out.push(truncateToWidth(`Prompt:`, width, "..."));
             out.push(truncateToWidth(`  ${a.taskSummary}`, width, "..."));
             for (const t of a.toolCalls ?? []) {
@@ -243,7 +248,7 @@ export function renderSubagentResult(
               out.push(theme.fg("dim", "  running..."));
             }
           } else {
-            const row = `  [${a.name}] ${mark}  ${a.taskSummary}`;
+            const row = `  [${a.name}] ${mark}${thinking}  ${a.taskSummary}`;
             out.push(truncateToWidth(row, width, "..."));
             for (const t of a.toolCalls ?? []) {
               out.push(truncateToWidth(`    ${agentToolRow(t)}`, width, "..."));
@@ -257,8 +262,12 @@ export function renderSubagentResult(
 
         out.push("");
         const status = details.running
-          ? ["running", details.usage?.turns ? `${details.usage.turns} turn${details.usage.turns > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ")
-          : formatUsage(details.usage ?? { input: 0, output: 0, cost: 0, turns: 0 }, details.model);
+          ? ["running", details.usage?.turns ? `${details.usage.turns} turn${details.usage.turns > 1 ? "s" : ""}` : "", formatThinkingLabel(details.thinking)].filter(Boolean).join(" · ")
+          : (() => {
+              const base = formatUsage(details.usage ?? { input: 0, output: 0, cost: 0, turns: 0 }, details.model);
+              const thinking = formatThinkingLabel(details.thinking);
+              return thinking ? `${base} · ${thinking}` : base;
+            })();
         const expandHint = !expanded ? keyHint("app.tools.expand", "expand for full output") : "";
         out.push(truncateToWidth([status, expandHint].filter(Boolean).join("  "), width, "..."));
         // Suppress unused warning
@@ -277,9 +286,13 @@ export function renderSubagentResult(
       if (details.usage?.turns) parts.push(`${details.usage.turns} turn${details.usage.turns > 1 ? "s" : ""}`);
       if (details.elapsedMs != null) parts.push(formatDuration(details.elapsedMs));
       if (details.model) parts.push(details.model);
+      const thinking = formatThinkingLabel(details.thinking);
+      if (thinking) parts.push(thinking);
       return parts.join(" · ");
     }
-    return formatUsage(details.usage ?? { input: 0, output: 0, cost: 0, turns: 0 }, details.model);
+    const base = formatUsage(details.usage ?? { input: 0, output: 0, cost: 0, turns: 0 }, details.model);
+    const thinking = formatThinkingLabel(details.thinking);
+    return thinking ? `${base} · ${thinking}` : base;
   }
 
   function toolRow(t: ToolCallEntry): string {
