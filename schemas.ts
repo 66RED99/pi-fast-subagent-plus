@@ -2,7 +2,7 @@
  * Typebox parameter schema for the `subagent` tool.
  */
 
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 const TaskItem = Type.Object({
   agent: Type.String({ description: "Agent name" }),

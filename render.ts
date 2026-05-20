@@ -5,10 +5,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { getAgentDir, Theme, truncateToVisualLines, keyHint } from "@mariozechner/pi-coding-agent";
-import type { AgentToolResult, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
-import type { Component } from "@mariozechner/pi-tui";
+import { getAgentDir, Theme, truncateToVisualLines, keyHint } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
 
 import { formatDuration, formatUsage } from "./format.js";
 import type { SubagentDetails, ToolCallEntry } from "./types.js";

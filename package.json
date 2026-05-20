@@ -23,13 +23,13 @@
     "workflow",
     "automation"
   ],
-  "homepage": "https://github.com/YOUR_GITHUB_USER/pi-fast-subagent-plus#readme",
+  "homepage": "https://github.com/66RED99/pi-fast-subagent-plus#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YOUR_GITHUB_USER/pi-fast-subagent-plus.git"
+    "url": "git+https://github.com/66RED99/pi-fast-subagent-plus.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_GITHUB_USER/pi-fast-subagent-plus/issues"
+    "url": "https://github.com/66RED99/pi-fast-subagent-plus/issues"
   },
   "files": [
     "index.ts",
@@ -55,14 +55,16 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-tui": "*",
-    "@sinclair/typebox": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.68.0",
-    "@mariozechner/pi-tui": "^0.68.0",
-    "@sinclair/typebox": "^0.34.41"
+    "@earendil-works/pi-coding-agent": "^0.75.4",
+    "@earendil-works/pi-tui": "^0.75.4",
+    "tsx": "^4.20.6",
+    "typebox": "^1.0.55",
+    "typescript": "^5.9.3"
   },
   "license": "MIT"
 }

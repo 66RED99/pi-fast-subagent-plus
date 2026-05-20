@@ -9,9 +9,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { getAgentDir } from "@mariozechner/pi-coding-agent";
-import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
-import { Theme } from "@mariozechner/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import { Theme } from "@earendil-works/pi-coding-agent";
 
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { BackgroundJobManager } from "./background-job-manager.js";

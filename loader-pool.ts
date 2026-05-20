@@ -7,8 +7,8 @@
  * one-loader-per-tuple with a FIFO idle queue.
  */
 
-import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
-import type { ResourceLoader } from "@mariozechner/pi-coding-agent";
+import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import type { ResourceLoader } from "@earendil-works/pi-coding-agent";
 
 type DefaultResourceLoaderOptions = ConstructorParameters<typeof DefaultResourceLoader>[0];
 
