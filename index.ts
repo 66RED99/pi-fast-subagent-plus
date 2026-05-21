@@ -9,6 +9,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { Theme } from "@earendil-works/pi-coding-agent";
@@ -472,6 +474,20 @@ export default function (pi: ExtensionAPI) {
       lines.push("");
       lines.push("Tip: /fast-subagent:agent <name> for details · Add .md files to .pi/agents/ to create new agents");
       ctx.ui.notify(lines.join("\n"), "info");
+    },
+  });
+
+  // ─── /fast-subagent:debug-prompt ─────────────────────────────────────────
+  pi.registerCommand("fast-subagent:debug-prompt", {
+    description: "Dump the live system prompt to ~/.pi/agent/debug/fast-subagent-system-prompt.txt.",
+    async handler(_args: string, ctx) {
+      await ctx.waitForIdle();
+      const prompt = ctx.getSystemPrompt();
+      const debugDir = join(getAgentDir(), "debug");
+      const debugFile = join(debugDir, "fast-subagent-system-prompt.txt");
+      mkdirSync(debugDir, { recursive: true });
+      writeFileSync(debugFile, prompt, "utf8");
+      ctx.ui.notify(`Live system prompt written to ${debugFile} (${prompt.length} chars).`, "info");
     },
   });
 
