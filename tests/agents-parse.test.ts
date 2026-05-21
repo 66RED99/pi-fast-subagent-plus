@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { parseMaxDepthField, parseThinkingField, parseToolsField } from "../agents.ts";
+import { buildSubagentToolPrompt, type AgentConfig, parseMaxDepthField, parseThinkingField, parseToolsField } from "../agents.ts";
 
 describe("parseToolsField", () => {
   it("defaults to 'all' when unset/empty/whitespace", () => {
@@ -85,5 +85,33 @@ describe("parseMaxDepthField", () => {
     assert.equal(parseMaxDepthField(-1), 0);
     assert.equal(parseMaxDepthField("-5"), 0);
     assert.equal(parseMaxDepthField(Infinity), 0);
+  });
+});
+
+describe("buildSubagentToolPrompt", () => {
+  it("uses minimal tool metadata with delegation guidance", () => {
+    const prompt = buildSubagentToolPrompt();
+
+    assert.equal(prompt.description, "Spawn subagents for delegated work");
+    assert.equal(prompt.promptSnippet, "Spawn subagents for delegated work");
+    assert.deepEqual(prompt.promptGuidelines, [
+      "Before doing anything else, check whether the task can be delegated to a subagent.",
+      "Always prefer subagents over using tools yourself whenever a suitable subagent exists.",
+      "Use { action: 'list' } to inspect available agents before choosing one.",
+      "Use single mode for one focused delegated task and parallel mode for independent delegated tasks.",
+    ]);
+  });
+
+  it("keeps the same guidance when no agents are available", () => {
+    const prompt = buildSubagentToolPrompt();
+
+    assert.equal(prompt.description, "Spawn subagents for delegated work");
+    assert.equal(prompt.promptSnippet, "Spawn subagents for delegated work");
+    assert.deepEqual(prompt.promptGuidelines, [
+      "Before doing anything else, check whether the task can be delegated to a subagent.",
+      "Always prefer subagents over using tools yourself whenever a suitable subagent exists.",
+      "Use { action: 'list' } to inspect available agents before choosing one.",
+      "Use single mode for one focused delegated task and parallel mode for independent delegated tasks.",
+    ]);
   });
 });

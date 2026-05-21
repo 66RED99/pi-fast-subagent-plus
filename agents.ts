@@ -40,7 +40,34 @@ export interface AgentConfig {
   filePath: string;
 }
 
+export interface SubagentToolPrompt {
+  description: string;
+  promptSnippet: string;
+  promptGuidelines: string[];
+}
+
 const BUILTIN_TOOLS = new Set<string>(BUILTIN_TOOL_NAMES);
+
+function formatAgentSummary(agent: AgentConfig): string {
+  return `${agent.name} — ${agent.description}`;
+}
+
+function formatAgentSummaryList(agents: AgentConfig[]): string {
+  return agents.length > 0 ? agents.map(formatAgentSummary).join("; ") : "No subagents are currently available.";
+}
+
+export function buildSubagentToolPrompt(): SubagentToolPrompt {
+  return {
+    description: "Spawn subagents for delegated work",
+    promptSnippet: "Spawn subagents for delegated work",
+    promptGuidelines: [
+      "Before doing anything else, check whether the task can be delegated to a subagent.",
+      "Always prefer subagents over using tools yourself whenever a suitable subagent exists.",
+      "Use { action: 'list' } to inspect available agents before choosing one.",
+      "Use single mode for one focused delegated task and parallel mode for independent delegated tasks.",
+    ],
+  };
+}
 
 export function agentNeedsExtensions(tools: AgentTools): boolean {
   if (tools === "all") return true;

@@ -5,7 +5,7 @@
 It keeps the original feature set and adds two changes:
 
 - **Per-agent `thinking` frontmatter**
-- **Automatic parent prompt injection** via `before_agent_start`, using discovered agent names and descriptions so Pi can route to subagents more reliably
+- **Dynamic subagent tool metadata** via `session_start`, with a delegation-first `subagent` prompt
 
 ## What it adds
 
@@ -30,18 +30,21 @@ Supported values:
 - `high`
 - `xhigh`
 
-### 2. Automatic prompt injection
+### 2. Dynamic tool metadata
 
-On each parent turn, the extension injects the discovered subagent list into the system prompt using:
+On session start, the extension refreshes the `subagent` tool metadata with a delegation-first prompt using:
 
-- agent `name`
-- agent `description`
+- `description`
+- `promptSnippet`
+- `promptGuidelines`
+
+The prompt details live in the tool registration itself, not in a `before_agent_start` hook.
 
 This helps Pi understand:
 
-- which subagents exist
-- what each one is for
-- when to use the `subagent` tool to delegate
+- when to delegate to a subagent
+- how to use the `subagent` tool
+- when to inspect available agents with `{ action: 'list' }`
 
 ## Install
 
