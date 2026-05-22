@@ -61,7 +61,7 @@ export function buildSubagentToolPrompt(): SubagentToolPrompt {
     description: "Spawn subagents for delegated work",
     promptSnippet: "Spawn subagents for delegated work",
     promptGuidelines: [
-      "Before doing anything else, check whether the task can be delegated to a subagent.",
+      "Before doing anything, check whether the task can be delegated to a subagent.",
       "Always prefer subagents over using tools yourself whenever a suitable subagent exists.",
       "Use { action: 'list' } to inspect available agents before choosing one.",
       "Use single mode for one focused delegated task and parallel mode for independent delegated tasks.",

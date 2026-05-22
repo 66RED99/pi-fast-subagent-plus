@@ -352,6 +352,11 @@ const _fgJobs = new Map<string, ForegroundDetachEntry>();
 export default function (pi: ExtensionAPI) {
   const BG_STATUS_KEY = "fast-subagent-bg";
 
+  // Register tool at module load time so it appears first in system prompt
+  // (extensions are loaded in packages array order; tools registered earlier
+  // appear earlier in the "Available tools" list and Guidelines section)
+  registerSubagentTool(pi);
+
   _onBgJobComplete = (job) => {
     refreshBgStatus();
     const elapsed = job.completedAt ? ((job.completedAt - job.startedAt) / 1000).toFixed(1) : "?";
@@ -374,7 +379,6 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     _setBgStatus = (text) => ctx.ui.setStatus(BG_STATUS_KEY, text);
-    registerSubagentTool(pi);
 
     // Warm one extension-capable loader after startup so first `tools: all`
     // subagent call reuses loaded extensions instead of blocking.
