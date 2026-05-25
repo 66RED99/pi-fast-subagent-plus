@@ -95,7 +95,6 @@ describe("buildSubagentToolPrompt", () => {
     assert.equal(prompt.description, "Spawn subagents for delegated work");
     assert.equal(prompt.promptSnippet, "Spawn subagents for delegated work");
     assert.deepEqual(prompt.promptGuidelines, [
-      "Before doing anything, check whether the task can be delegated to a subagent.",
       "For simple, trivial tasks, use tools yourself; otherwise, always prefer subagents whenever a suitable subagent exists.",
       "Use { action: 'list' } to inspect available agents before choosing one.",
       "Use single mode for one focused delegated task and parallel mode for independent delegated tasks.",
@@ -108,7 +107,6 @@ describe("buildSubagentToolPrompt", () => {
     assert.equal(prompt.description, "Spawn subagents for delegated work");
     assert.equal(prompt.promptSnippet, "Spawn subagents for delegated work");
     assert.deepEqual(prompt.promptGuidelines, [
-      "Before doing anything, check whether the task can be delegated to a subagent.",
       "For simple, trivial tasks, use tools yourself; otherwise, always prefer subagents whenever a suitable subagent exists.",
       "Use { action: 'list' } to inspect available agents before choosing one.",
       "Use single mode for one focused delegated task and parallel mode for independent delegated tasks.",
