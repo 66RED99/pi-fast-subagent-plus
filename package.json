@@ -36,6 +36,7 @@
     "agents.ts",
     "background-job-manager.ts",
     "background-types.ts",
+    "control-panel.ts",
     "format.ts",
     "loader-pool.ts",
     "render.ts",

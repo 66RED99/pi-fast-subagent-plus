@@ -12,20 +12,24 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentToolResult,
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+  ToolRenderResultOptions,
+} from "@earendil-works/pi-coding-agent";
 import { Theme } from "@earendil-works/pi-coding-agent";
 
 import { buildSubagentToolPrompt, type AgentConfig, discoverAgents } from "./agents.js";
 import { BackgroundJobManager } from "./background-job-manager.js";
 import type { BackgroundHandleLike, BackgroundJobResult, BackgroundSubagentJob } from "./background-types.js";
 import {
-  formatBgJobDetails,
-  formatBgJobSummary,
   formatDuration,
   formatTools,
   getFinalText,
-  summarizeTask,
 } from "./format.js";
+import { openFastSubagentPanel } from "./control-panel.js";
 import { defaultLoaderPool } from "./loader-pool.js";
 import { renderSubagentCall, renderSubagentResult } from "./render.js";
 import { getCurrentDepth, mapConcurrent, runAgent } from "./runner.js";
@@ -49,6 +53,16 @@ function getBgManager(): BackgroundJobManager {
 function refreshBgStatus(): void {
   const running = getBgManager().getRunningJobs();
   _setBgStatus?.(running.length > 0 ? `⧗ ${running.length} bg agent${running.length > 1 ? "s" : ""}` : undefined);
+}
+
+async function writeDebugPrompt(ctx: ExtensionCommandContext): Promise<string> {
+  await ctx.waitForIdle();
+  const prompt = ctx.getSystemPrompt();
+  const debugDir = join(getAgentDir(), "debug");
+  const debugFile = join(debugDir, "fast-subagent-system-prompt.txt");
+  mkdirSync(debugDir, { recursive: true });
+  writeFileSync(debugFile, prompt, "utf8");
+  return debugFile;
 }
 
 function registerSubagentTool(pi: ExtensionAPI): void {
@@ -417,201 +431,25 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ─── /fast-subagent:agent ─────────────────────────────────────────────────
-  pi.registerCommand("fast-subagent:agent", {
-    description: "List available subagents. Usage: /fast-subagent:agent [name] — show details for a specific agent.",
-    getArgumentCompletions(prefix: string) {
-      const agents = discoverAgents(process.cwd());
-      return agents
-        .filter((a) => a.name.startsWith(prefix))
-        .map((a) => ({ value: a.name, label: a.name, description: a.description }));
-    },
-    async handler(args: string, ctx) {
-      const agents = discoverAgents(ctx.cwd);
-      const name = args.trim();
-
-      if (name) {
-        const agent = agents.find((a) => a.name === name);
-        if (!agent) {
-          const list = agents.map((a) => a.name).join(", ") || "none";
-          ctx.ui.notify(`Unknown agent "${name}". Available: ${list}`, "warning");
-          return;
-        }
-        const lines = [
-          `## ${agent.name} [${agent.source}]`,
-          `File: ${agent.filePath}`,
-          `Description: ${agent.description}`,
-          agent.model ? `Model: ${agent.model}` : "",
-          agent.thinking ? `Thinking: ${agent.thinking}` : "",
-          `Tools: ${formatTools(agent.tools)}`,
-          `Max subagent depth: ${agent.maxDepth}`,
-          agent.systemPrompt ? `\nSystem prompt:\n${agent.systemPrompt}` : "",
-        ].filter(Boolean).join("\n");
-        ctx.ui.notify(lines, "info");
-        return;
-      }
-
-      if (agents.length === 0) {
-        ctx.ui.notify(
-          "No agents found.\n" +
-          "Add .md files to:\n" +
-          "  ~/.pi/agent/agents/   (user-level)\n" +
-          "  .pi/agents/           (project-level)\n" +
-          "\nFrontmatter required: name, description. Optional: model, thinking, tools, maxDepth.",
-          "info",
-        );
-        return;
-      }
-
-      const userAgents = agents.filter((a) => a.source === "user");
-      const projectAgents = agents.filter((a) => a.source === "project");
-
-      const lines: string[] = [`Agents (${agents.length}):`];
-      if (projectAgents.length) {
-        lines.push("\nProject (.pi/agents/):");
-        for (const a of projectAgents) lines.push(`  ${a.name}${a.model ? ` [${a.model}]` : ""} — ${a.description}`);
-      }
-      if (userAgents.length) {
-        lines.push("\nUser (~/.pi/agent/agents/):");
-        for (const a of userAgents) lines.push(`  ${a.name}${a.model ? ` [${a.model}]` : ""} — ${a.description}`);
-      }
-      lines.push("");
-      lines.push("Tip: /fast-subagent:agent <name> for details · Add .md files to .pi/agents/ to create new agents");
-      ctx.ui.notify(lines.join("\n"), "info");
-    },
-  });
-
-  // ─── /fast-subagent:debug-prompt ─────────────────────────────────────────
-  pi.registerCommand("fast-subagent:debug-prompt", {
-    description: "Dump the live system prompt to ~/.pi/agent/debug/fast-subagent-system-prompt.txt.",
+  // ─── /fast-subagent ───────────────────────────────────────────────────────
+  pi.registerCommand("fast-subagent", {
+    description: "Open the fast-subagent control panel.",
     async handler(_args: string, ctx) {
-      await ctx.waitForIdle();
-      const prompt = ctx.getSystemPrompt();
-      const debugDir = join(getAgentDir(), "debug");
-      const debugFile = join(debugDir, "fast-subagent-system-prompt.txt");
-      mkdirSync(debugDir, { recursive: true });
-      writeFileSync(debugFile, prompt, "utf8");
-      ctx.ui.notify(`Live system prompt written to ${debugFile} (${prompt.length} chars).`, "info");
+      await openFastSubagentPanel({
+        ctx,
+        getAgents: () => discoverAgents(ctx.cwd),
+        getBackgroundJobs: () => getBgManager().getAllJobs(),
+        getRunningBackgroundJobs: () => getBgManager().getRunningJobs(),
+        getForegroundJobs: () => [..._fgJobs.entries()].map(([id, entry]) => ({
+          id,
+          agentName: entry.agentName,
+          task: entry.task,
+          detach: entry.detach,
+        })),
+        writeDebugPrompt: () => writeDebugPrompt(ctx),
+        cancelBackgroundJob: (jobId) => getBgManager().cancel(jobId),
+      });
     },
   });
-
-  // ─── /fast-subagent:bg ────────────────────────────────────────────────────
-  pi.registerCommand("fast-subagent:bg", {
-    description: "Move a running foreground subagent to background. Shortcut: Alt+Shift+B. Usage: /fast-subagent:bg [fg-job-id] — omit ID to list active foreground jobs.",
-    getArgumentCompletions(_prefix: string) {
-      return [..._fgJobs.keys()].map((id) => ({ value: id, label: id }));
-    },
-    async handler(args: string, ctx) {
-      const id = args.trim();
-      if (!id) {
-        if (_fgJobs.size === 0) {
-          ctx.ui.notify("No active foreground subagent jobs.", "info");
-          return;
-        }
-        const lines = ["Active foreground jobs (use /fast-subagent:bg <id> to detach):"];
-        for (const [fgId, entry] of _fgJobs) {
-          lines.push(`  ${fgId}  ${entry.agentName}: ${summarizeTask(entry.task)}`);
-        }
-        ctx.ui.notify(lines.join("\n"), "info");
-        return;
-      }
-      const entry = _fgJobs.get(id);
-      if (!entry) {
-        ctx.ui.notify(`Foreground job "${id}" not found (already done or invalid).`, "warning");
-        return;
-      }
-      const bgJobId = entry.detach();
-      ctx.ui.notify(`Moved to background: ${bgJobId}\nTo check status, ask me to poll job ${bgJobId}.`, "info");
-    },
-  });
-
-  // ─── /fast-subagent:bg-status ─────────────────────────────────────────────
-  pi.registerCommand("fast-subagent:bg-status", {
-    description: "Show active background subagents. Usage: /fast-subagent:bg-status [sa-job-id] — omit ID to open selector.",
-    getArgumentCompletions(prefix: string) {
-      return getBgManager().getAllJobs()
-        .filter((job) => job.id.startsWith(prefix))
-        .map((job) => ({ value: job.id, label: formatBgJobSummary(job) }));
-    },
-    async handler(args: string, ctx) {
-      const id = args.trim();
-      if (id) {
-        const job = getBgManager().getJob(id);
-        if (!job) {
-          ctx.ui.notify(`Background job "${id}" not found.`, "warning");
-          return;
-        }
-        ctx.ui.notify(formatBgJobDetails(job), "info");
-        return;
-      }
-
-      const jobs = getBgManager().getRunningJobs().sort((a, b) => b.startedAt - a.startedAt);
-      if (jobs.length === 0) {
-        ctx.ui.notify("No active background subagent jobs.", "info");
-        return;
-      }
-
-      const options = jobs.map((job) => formatBgJobSummary(job));
-      const selected = await ctx.ui.select("Active background subagents", options);
-      if (!selected) return;
-
-      const jobId = selected.split(" ")[0] ?? "";
-      const job = getBgManager().getJob(jobId);
-      if (!job) {
-        ctx.ui.notify(`Background job "${jobId}" not found.`, "warning");
-        return;
-      }
-      ctx.ui.notify(formatBgJobDetails(job), "info");
-    },
-  });
-
-  // ─── /fast-subagent:bg-cancel ─────────────────────────────────────────────
-  pi.registerCommand("fast-subagent:bg-cancel", {
-    description: "Cancel running background subagent. Usage: /fast-subagent:bg-cancel [sa-job-id] — omit ID to choose with arrow keys.",
-    getArgumentCompletions(prefix: string) {
-      return getBgManager().getRunningJobs()
-        .filter((job) => job.id.startsWith(prefix))
-        .map((job) => ({ value: job.id, label: formatBgJobSummary(job) }));
-    },
-    async handler(args: string, ctx) {
-      let jobId = args.trim();
-
-      if (!jobId) {
-        const jobs = getBgManager().getRunningJobs().sort((a, b) => b.startedAt - a.startedAt);
-        if (jobs.length === 0) {
-          ctx.ui.notify("No running background subagent jobs to cancel.", "info");
-          return;
-        }
-
-        const options = jobs.map((job) => formatBgJobSummary(job));
-        const selected = await ctx.ui.select("Cancel background subagent", options);
-        if (!selected) return;
-        jobId = selected.split(" ")[0] ?? "";
-      }
-
-      const job = getBgManager().getJob(jobId);
-      if (!job) {
-        ctx.ui.notify(`Background job "${jobId}" not found.`, "warning");
-        return;
-      }
-      if (job.status !== "running") {
-        ctx.ui.notify(`Background job "${jobId}" already ${job.status}.`, "info");
-        return;
-      }
-
-      const confirmed = await ctx.ui.confirm(
-        "Cancel background subagent?",
-        `${formatBgJobSummary(job)}\n\nTask:\n${job.task}`,
-      );
-      if (!confirmed) return;
-
-      const result = getBgManager().cancel(jobId);
-      const msg = result === "cancelled" ? `Background job "${jobId}" cancelled.`
-        : result === "already_done" ? `Background job "${jobId}" already completed.`
-        : `Background job "${jobId}" not found.`;
-      ctx.ui.notify(msg, result === "cancelled" ? "info" : "warning");
-    },
-  });
-
 
 }
