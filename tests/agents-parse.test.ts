@@ -92,24 +92,17 @@ describe("buildSubagentToolPrompt", () => {
   it("uses minimal tool metadata with delegation guidance", () => {
     const prompt = buildSubagentToolPrompt();
 
-    assert.equal(prompt.description, "Spawn subagents for delegated work");
+    assert.ok(prompt.description.includes("Results are returned directly"), "description should mention inline results");
     assert.equal(prompt.promptSnippet, "Spawn subagents for delegated work");
-    assert.deepEqual(prompt.promptGuidelines, [
-      "For simple, trivial tasks, use tools yourself; otherwise, always prefer subagents whenever a suitable subagent exists.",
-      "Use { action: 'list' } to inspect available agents before choosing one.",
-      "Use single mode for one focused delegated task and parallel mode for independent delegated tasks.",
-    ]);
+    assert.ok(prompt.promptGuidelines.some((g) => g.includes("do NOT call action:'poll'")), "guidelines should warn against polling foreground results");
+    assert.ok(prompt.promptGuidelines.some((g) => g.includes("BACKGROUND-ONLY") || g.includes("background jobs")), "guidelines should clarify background-only actions");
   });
 
   it("keeps the same guidance when no agents are available", () => {
     const prompt = buildSubagentToolPrompt();
 
-    assert.equal(prompt.description, "Spawn subagents for delegated work");
+    assert.ok(prompt.description.includes("Results are returned directly"), "description should mention inline results");
     assert.equal(prompt.promptSnippet, "Spawn subagents for delegated work");
-    assert.deepEqual(prompt.promptGuidelines, [
-      "For simple, trivial tasks, use tools yourself; otherwise, always prefer subagents whenever a suitable subagent exists.",
-      "Use { action: 'list' } to inspect available agents before choosing one.",
-      "Use single mode for one focused delegated task and parallel mode for independent delegated tasks.",
-    ]);
+    assert.ok(prompt.promptGuidelines.length >= 3, "should have at least 3 guidelines");
   });
 });

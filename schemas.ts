@@ -29,11 +29,13 @@ export const SubagentParams = Type.Object({
     Type.Number({ description: "Max parallel concurrency (default: 4)", default: 4 }),
   ),
 
-  // Background
-  background: Type.Optional(Type.Boolean({ description: "Run in background, returns job ID immediately" })),
-  jobId: Type.Optional(Type.String({ description: "Job ID for poll/cancel" })),
+  // Background — omit this for normal use; results return inline in the tool call
+  background: Type.Optional(Type.Boolean({ description: "OPTIONAL: true = run async in background and return job ID immediately. Omit for normal synchronous execution where results are returned directly." })),
 
-  // Management
+  // Background job management — ONLY used after background:true calls
+  jobId: Type.Optional(Type.String({ description: "Background job ID (from a previous background:true call) for poll/cancel. Not used in normal synchronous execution." })),
+
+  // Management actions — most are ONLY for background jobs
   action: Type.Optional(
     Type.Union(
       [
@@ -46,7 +48,7 @@ export const SubagentParams = Type.Object({
       ],
       {
         description:
-          "'list'/'get' for agents, 'status' for bg jobs, 'poll'/'cancel' for a specific job, 'detach' to move a foreground job to background",
+          "'list' = show available agents; 'get' = inspect one agent. BACKGROUND-ONLY: 'status' = list bg jobs, 'poll' = get completed bg job result (requires jobId), 'cancel' = stop a bg job, 'detach' = move current foreground job to background. Never use status/poll/cancel/detach after normal synchronous subagent calls.",
       },
     ),
   ),

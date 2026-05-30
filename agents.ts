@@ -58,12 +58,14 @@ function formatAgentSummaryList(agents: AgentConfig[]): string {
 
 export function buildSubagentToolPrompt(): SubagentToolPrompt {
   return {
-    description: "Spawn subagents for delegated work",
+    description: "Spawn subagents for delegated work. Results are returned directly in this tool call — no polling required.",
     promptSnippet: "Spawn subagents for delegated work",
     promptGuidelines: [
       "For simple, trivial tasks, use tools yourself; otherwise, always prefer subagents whenever a suitable subagent exists.",
       "Use { action: 'list' } to inspect available agents before choosing one.",
       "Use single mode for one focused delegated task and parallel mode for independent delegated tasks.",
+      "Results are returned directly in the tool response — do NOT call action:'poll' or action:'status' after a foreground subagent call. The tool result IS the output.",
+      "action:'poll', action:'status', action:'cancel' are ONLY for background jobs (background:true). Never call them for standard (foreground) subagent execution.",
     ],
   };
 }
