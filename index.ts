@@ -17,9 +17,12 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  ExtensionUIContext,
   ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { Theme } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import type { TUI } from "@earendil-works/pi-tui";
 
 import { buildSubagentToolPrompt, type AgentConfig, discoverAgents } from "./agents.js";
 import { BackgroundJobManager } from "./background-job-manager.js";
@@ -34,7 +37,7 @@ import { defaultLoaderPool } from "./loader-pool.js";
 import { renderSubagentCall, renderSubagentResult } from "./render.js";
 import { getCurrentDepth, mapConcurrent, runAgent } from "./runner.js";
 import { SubagentParams } from "./schemas.js";
-import type { AgentRowStatus, OnUpdate, RunResult, SubagentDetails, ToolCallEntry } from "./types.js";
+import type { AgentRowStatus, OnUpdate, RunningAgentEntry, RunResult, SubagentDetails, ToolCallEntry } from "./types.js";
 
 // ─── Module-level state ─────────────────────────────────────────────────────
 
@@ -42,6 +45,115 @@ let _bgManager: BackgroundJobManager | null = null;
 let _onBgJobComplete: ((job: BackgroundSubagentJob) => void) | null = null;
 let _setBgStatus: ((text: string | undefined) => void) | null = null;
 const FG_STATUS_KEY = "fast-subagent-fg";
+
+// ─── Running agent registry (for below-editor widget) ───────────────────────
+
+const _runningAgents = new Map<string, RunningAgentEntry>();
+let _sessionUi: ExtensionUIContext | null = null;
+let _agentListFocused = false;
+let _agentListSelectedIdx = 0;
+let _overlayOpen = false;
+let _tui: TUI | null = null;
+let _inputUnsubscribe: (() => void) | null = null;
+let _capturedTheme: Theme | null = null;
+
+function refreshAgentWidget(): void {
+  _tui?.requestRender();
+}
+
+function registerAgent(entry: RunningAgentEntry): void {
+  _runningAgents.set(entry.id, entry);
+  refreshAgentWidget();
+}
+
+function unregisterAgent(id: string): void {
+  _runningAgents.delete(id);
+  if (_runningAgents.size === 0 && _agentListFocused) {
+    _agentListFocused = false;
+    _agentListSelectedIdx = 0;
+  } else if (_agentListSelectedIdx > _runningAgents.size) {
+    _agentListSelectedIdx = _runningAgents.size;
+  }
+  refreshAgentWidget();
+}
+
+function buildAgentListLines(agents: RunningAgentEntry[], theme: Theme, width: number): string[] {
+  const out: string[] = [];
+
+  const mainCursor = _agentListFocused && _agentListSelectedIdx === 0 ? ">" : " ";
+  const mainBullet = theme.bold ? theme.bold("●") : "●";
+  out.push(truncateToWidth(`${mainCursor} ${mainBullet} main`, width, "..."));
+
+  for (let i = 0; i < agents.length; i++) {
+    const entry = agents[i]!;
+    const isSelected = _agentListFocused && _agentListSelectedIdx === i + 1;
+    const cursor = isSelected ? ">" : " ";
+    const elapsed = formatDuration(Date.now() - entry.startedAt);
+    const left = `${cursor} ○ ${entry.agentName}   ${entry.taskSummary}`;
+    const leftWidth = Math.max(1, width - elapsed.length - 2);
+    out.push(`${truncateToWidth(left, leftWidth, "...")}  ${theme.fg("dim", elapsed)}`);
+  }
+
+  if (_agentListFocused) {
+    out.push(truncateToWidth(
+      theme.fg("dim", "Enter to view · x to stop · ctrl+k stop all · ESC unfocus"),
+      width, "...",
+    ));
+  } else {
+    out.push(theme.fg("dim", "↓ to navigate agents"));
+  }
+
+  return out;
+}
+
+function openAgentDetailOverlay(entry: RunningAgentEntry): void {
+  if (_overlayOpen || !_sessionUi) return;
+  _overlayOpen = true;
+
+  void _sessionUi.custom((_overlayTui, theme, _keybindings, done) => {
+    return {
+      render(width: number): string[] {
+        const out: string[] = [];
+        out.push(theme.fg("accent", theme.bold(entry.agentName)));
+        out.push("");
+        out.push("Task:");
+        out.push(truncateToWidth(`  ${entry.taskSummary}`, width, "..."));
+        out.push("");
+        const elapsed = formatDuration(Date.now() - entry.startedAt);
+        const modelPart = entry.model ? ` · ${entry.model}` : "";
+        out.push(`Status: ${entry.status} · ${elapsed}${modelPart}`);
+        if (entry.toolCalls.length > 0) {
+          out.push("");
+          out.push("Recent tool calls:");
+          for (const tc of entry.toolCalls.slice(-8)) {
+            const st = tc.result !== undefined ? (tc.isError ? "✗" : "✓") : "…";
+            out.push(truncateToWidth(`  ${st} ${tc.name}(${tc.argSummary})`, width, "..."));
+          }
+        }
+        if (entry.responseText) {
+          out.push("");
+          out.push("Response:");
+          for (const l of entry.responseText.split("\n").slice(0, 8)) {
+            out.push(truncateToWidth(`  ${l}`, width, "..."));
+          }
+        }
+        out.push("");
+        out.push(theme.fg("dim", "ESC or Enter to close"));
+        return out;
+      },
+      invalidate() {},
+      handleInput(data: string) {
+        if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter)) {
+          done(undefined);
+        }
+      },
+    };
+  }, { overlay: true, overlayOptions: { anchor: "center", width: "70%", maxHeight: "80%" } })
+    .finally(() => {
+      _overlayOpen = false;
+      refreshAgentWidget();
+    });
+}
 
 function getBgManager(): BackgroundJobManager {
   if (!_bgManager) _bgManager = new BackgroundJobManager({
@@ -200,12 +312,38 @@ To check status, ask me to poll job ${jobId}.` }] };
         const forwardAbort = () => agentAbort.abort();
         signal?.addEventListener("abort", forwardAbort, { once: true });
 
+        // Register in the running-agents widget
+        const registryId = `fg_r_${randomUUID().slice(0, 8)}`;
+        const registryEntry: RunningAgentEntry = {
+          id: registryId,
+          agentName: agent.name,
+          taskSummary: params.task.length > 60 ? params.task.slice(0, 57) + "..." : params.task,
+          startedAt: Date.now(),
+          abort: () => agentAbort.abort(),
+          toolCalls: [],
+          responseText: "",
+          status: "running",
+          executionEvents: [],
+        };
+        registerAgent(registryEntry);
+
         let detachResolveFn: ((bgJobId: string) => void) | null = null;
         const detachPromise = new Promise<string>((resolve) => { detachResolveFn = resolve; });
 
         let forwardUpdates = true;
         const wrappedOnUpdate: OnUpdate | undefined = onUpdate
-          ? (partial) => { if (forwardUpdates) (onUpdate as unknown as OnUpdate)(partial); }
+          ? (partial) => {
+              const d = partial.details as SubagentDetails | undefined;
+              if (d) {
+                registryEntry.toolCalls = d.toolCalls ?? registryEntry.toolCalls;
+                registryEntry.model = d.model ?? registryEntry.model;
+                registryEntry.thinking = d.thinking ?? registryEntry.thinking;
+                registryEntry.executionEvents = d.executionEvents ?? registryEntry.executionEvents;
+              }
+              registryEntry.responseText = (partial.content?.[0] as any)?.text || registryEntry.responseText;
+              refreshAgentWidget();
+              if (forwardUpdates) (onUpdate as unknown as OnUpdate)(partial);
+            }
           : undefined;
 
         const agentRunPromise: Promise<RunResult> = runAgent(
@@ -239,6 +377,7 @@ To check status, ask me to poll job ${jobId}.` }] };
           _fgJobs.delete(fgId);
           signal?.removeEventListener("abort", forwardAbort);
           ctx.ui.setStatus(FG_STATUS_KEY, undefined);
+          unregisterAgent(registryId);
         });
 
         if (outcome === "detached") {
@@ -304,8 +443,31 @@ To check status, ask me to poll job ${jobId}.` }] };
         const allResults = await mapConcurrent(expanded, concurrency, async (t, i) => {
           parallelAgents[i]!.status = "running";
           emitParallel(true);
+
+          // Per-agent abort controller chained to parent signal
+          const taskAbort = new AbortController();
+          const onParentAbort = () => taskAbort.abort();
+          signal?.addEventListener("abort", onParentAbort, { once: true });
+
+          // Registry entry for widget
+          const registryId = `par_${randomUUID().slice(0, 8)}`;
+          const registryEntry: RunningAgentEntry = {
+            id: registryId,
+            agentName: t.agent,
+            taskSummary: t.task.length > 60 ? t.task.slice(0, 57) + "..." : t.task,
+            startedAt: Date.now(),
+            abort: () => taskAbort.abort(),
+            toolCalls: [],
+            responseText: "",
+            status: "running",
+            executionEvents: [],
+          };
+          registerAgent(registryEntry);
+
           const { agent, error } = findAgent(t.agent);
           if (error || !agent) {
+            signal?.removeEventListener("abort", onParentAbort);
+            unregisterAgent(registryId);
             parallelAgents[i]!.status = "error";
             emitParallel(true);
             return { agentName: t.agent, output: "", exitCode: 1, error, model: undefined, toolCalls: [] as ToolCallEntry[], usage: emptyUsage };
@@ -316,6 +478,12 @@ To check status, ask me to poll job ${jobId}.` }] };
             parallelAgents[i]!.toolCalls = d?.toolCalls ? [...d.toolCalls] : parallelAgents[i]!.toolCalls;
             parallelAgents[i]!.thinking = d?.thinking ?? parallelAgents[i]!.thinking;
             parallelAgents[i]!.responseText = (partial.content?.[0] as any)?.text || parallelAgents[i]!.responseText;
+            if (d) {
+              registryEntry.toolCalls = d.toolCalls ?? registryEntry.toolCalls;
+              registryEntry.executionEvents = d.executionEvents ?? registryEntry.executionEvents;
+            }
+            registryEntry.responseText = (partial.content?.[0] as any)?.text || registryEntry.responseText;
+            refreshAgentWidget();
             emitParallel(true);
           };
           const result = await runAgent(
@@ -323,10 +491,13 @@ To check status, ask me to poll job ${jobId}.` }] };
             t.task,
             t.cwd ?? cwd,
             t.model,
-            signal,
+            taskAbort.signal,
             agentOnUpdate,
             parentDepth,
           );
+          signal?.removeEventListener("abort", onParentAbort);
+          registryEntry.status = result.exitCode === 0 ? "done" : "error";
+          unregisterAgent(registryId);
           parallelAgents[i]!.status = result.exitCode === 0 ? "done" : "error";
           parallelAgents[i]!.durMs = Date.now() - agentStart;
           parallelAgents[i]!.toolCalls = result.toolCalls;
@@ -393,6 +564,95 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     _setBgStatus = (text) => ctx.ui.setStatus(BG_STATUS_KEY, text);
+    _sessionUi = ctx.ui;
+
+    // Register below-editor widget (component factory form captures tui + theme)
+    ctx.ui.setWidget("fast-subagent-list", (tui, theme) => {
+      _tui = tui;
+      _capturedTheme = theme;
+      return {
+        render(width: number): string[] {
+          const agents = [..._runningAgents.values()];
+          if (agents.length === 0 && !_agentListFocused) return [];
+          return buildAgentListLines(agents, theme, width);
+        },
+        invalidate() {},
+      };
+    }, { placement: "belowEditor" });
+
+    // Register keyboard handler for agent list navigation
+    const unsubInput = ctx.ui.onTerminalInput((data) => {
+      if (_overlayOpen) return undefined;
+
+      const agentList = [..._runningAgents.values()];
+
+      if (!_agentListFocused) {
+        // Focus on down-arrow if agents are running and editor has no newline
+        if (agentList.length > 0 && matchesKey(data, Key.down)) {
+          const editorText = _sessionUi?.getEditorText() ?? "";
+          if (!editorText.includes("\n")) {
+            _agentListFocused = true;
+            _agentListSelectedIdx = 0;
+            refreshAgentWidget();
+            return { consume: true };
+          }
+        }
+        return undefined;
+      }
+
+      // Agent list is focused
+      const totalItems = 1 + agentList.length; // main + agents
+
+      if (matchesKey(data, Key.down)) {
+        _agentListSelectedIdx = Math.min(_agentListSelectedIdx + 1, totalItems - 1);
+        refreshAgentWidget();
+        return { consume: true };
+      }
+      if (matchesKey(data, Key.up)) {
+        if (_agentListSelectedIdx === 0) {
+          _agentListFocused = false;
+          refreshAgentWidget();
+          return undefined; // let editor receive the key
+        }
+        _agentListSelectedIdx--;
+        refreshAgentWidget();
+        return { consume: true };
+      }
+      if (matchesKey(data, Key.escape)) {
+        _agentListFocused = false;
+        _agentListSelectedIdx = 0;
+        refreshAgentWidget();
+        return { consume: true };
+      }
+      if (matchesKey(data, Key.enter)) {
+        if (_agentListSelectedIdx === 0) {
+          _agentListFocused = false;
+          refreshAgentWidget();
+        } else {
+          const entry = agentList[_agentListSelectedIdx - 1];
+          if (entry) openAgentDetailOverlay(entry);
+        }
+        return { consume: true };
+      }
+      if (data === "x" || data === "X") {
+        if (_agentListSelectedIdx > 0) {
+          const entry = agentList[_agentListSelectedIdx - 1];
+          if (entry) {
+            entry.abort();
+            ctx.ui.notify(`Stopping ${entry.agentName}…`, "info");
+          }
+        }
+        return { consume: true };
+      }
+      if (matchesKey(data, Key.ctrl("k"))) {
+        for (const entry of agentList) entry.abort();
+        if (agentList.length > 0) ctx.ui.notify("Stopping all agents…", "info");
+        return { consume: true };
+      }
+
+      return undefined;
+    });
+    _inputUnsubscribe = unsubInput;
 
     // Warm one extension-capable loader after startup so first `tools: all`
     // subagent call reuses loaded extensions instead of blocking.
@@ -404,6 +664,14 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
+    _inputUnsubscribe?.();
+    _inputUnsubscribe = null;
+    _sessionUi = null;
+    _tui = null;
+    _capturedTheme = null;
+    _agentListFocused = false;
+    _agentListSelectedIdx = 0;
+    _overlayOpen = false;
     getBgManager().shutdown();
     _bgManager = null;
     _setBgStatus = null;

@@ -135,7 +135,6 @@ export function renderSubagentCall(
       const key = JSON.stringify({ args, executionStarted: context.executionStarted, argsComplete: context.argsComplete, width });
       if (cache.callWidth === width && cache.callKey === key && cache.callLines) return cache.callLines;
 
-      const out: string[] = [];
       const agent = asString(args.agent);
       const action = asString(args.action);
       const task = asString(args.task);
@@ -151,39 +150,12 @@ export function renderSubagentCall(
       const mode = isParallel ? `Parallel (${tasks!.length})` : "Subagent";
       const bg = args.background === true ? " · background" : "";
       const target = agent ? ` ${agent}` : action ? ` ${action}` : "";
-      out.push(truncateToWidth(`${theme.fg("toolTitle", mode)}${target}${bg} · ${theme.fg("dim", status)}`, width, "..."));
-
-      // Once execution starts, result renderer owns prompt display. Keep call row compact.
-      if (context.executionStarted) {
-        cache.callWidth = width;
-        cache.callKey = key;
-        cache.callLines = out;
-        return out;
-      }
-
-      const maxLines = readPreviewSettings().promptPreviewLines;
-      if (task) {
-        out.push(truncateToWidth("Prompt:", width, "..."));
-        const preview = taskPreviewLines(task, width, maxLines);
-        out.push(...preview.lines);
-        if (preview.skipped > 0) out.push(truncateToWidth(theme.fg("muted", `  … (${preview.skipped} more lines)`), width, "..."));
-      } else if (tasks?.length) {
-        const maxRows = Math.max(1, Math.min(maxLines, tasks.length));
-        for (let i = 0; i < maxRows; i++) {
-          const t = tasks[i]!;
-          const rowAgent = asString(t.agent) ?? "?";
-          const rowTask = asString(t.task) ?? "";
-          out.push(truncateToWidth(`  [${rowAgent}] ${rowTask || theme.fg("dim", "writing prompt...")}`, width, "..."));
-        }
-        if (tasks.length > maxRows) out.push(truncateToWidth(theme.fg("muted", `  … (${tasks.length - maxRows} more task${tasks.length - maxRows === 1 ? "" : "s"})`), width, "..."));
-      } else {
-        out.push(truncateToWidth(theme.fg("dim", "  waiting for streamed tool arguments..."), width, "..."));
-      }
+      const lines = [truncateToWidth(`${theme.fg("toolTitle", mode)}${target}${bg} · ${theme.fg("dim", status)}`, width, "...")];
 
       cache.callWidth = width;
       cache.callKey = key;
-      cache.callLines = out;
-      return out;
+      cache.callLines = lines;
+      return lines;
     },
   };
 }
@@ -248,16 +220,20 @@ export function renderSubagentResult(
               out.push(theme.fg("dim", "  running..."));
             }
           } else {
-            const row = `  [${a.name}] ${mark}${thinking}  ${a.taskSummary}`;
-            out.push(truncateToWidth(row, width, "..."));
-            for (const t of a.toolCalls ?? []) {
-              out.push(truncateToWidth(`    ${agentToolRow(t)}`, width, "..."));
-            }
-            if (a.responseText && (a.status === "done" || a.status === "error")) {
-              const preview = truncateToVisualLines(a.responseText, 2, width - 4);
-              for (const l of preview.visualLines) out.push(truncateToWidth("    " + l, width, "..."));
-            }
+            // Collapsed parallel — skip per-agent rows, widget has the detail
           }
+        }
+
+        if (!expanded) {
+          // Collapsed: single status line only
+          const status = details.running
+            ? ["running", details.usage?.turns ? `${details.usage.turns} turn${details.usage.turns > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ")
+            : formatUsage(details.usage ?? { input: 0, output: 0, cost: 0, turns: 0 }, details.model);
+          const expandHint = keyHint("app.tools.expand", "verbose");
+          out.push(truncateToWidth([header, status, expandHint].filter(Boolean).join(" · "), width, "..."));
+          // Suppress unused warning
+          void wrapL;
+          return out;
         }
 
         out.push("");
@@ -268,7 +244,7 @@ export function renderSubagentResult(
               const thinking = formatThinkingLabel(details.thinking);
               return thinking ? `${base} · ${thinking}` : base;
             })();
-        const expandHint = !expanded ? keyHint("app.tools.expand", "expand for full output") : "";
+        const expandHint = keyHint("app.tools.expand", "expand for full output");
         out.push(truncateToWidth([status, expandHint].filter(Boolean).join("  "), width, "..."));
         // Suppress unused warning
         void wrapL;
@@ -477,66 +453,14 @@ export function renderSubagentResult(
         return cache.expandedOutputLines!;
       }
 
-      // Collapsed view
-      if (details.task) {
-        out.push("Prompt:");
-        const PROMPT_PREVIEW_LINES = readPreviewSettings().promptPreviewLines;
-        if (cache.width !== width || cache.promptLines === undefined) {
-          const innerWidth = Math.max(1, width - indent.length);
-          const allVisual: string[] = [];
-          for (const raw of details.task.split("\n")) {
-            for (const w of wrapLine(raw, innerWidth)) allVisual.push(w);
-          }
-          const head = allVisual.slice(0, PROMPT_PREVIEW_LINES);
-          cache.promptLines = head.map((l) => truncateToWidth(indent + l, width, "..."));
-          cache.promptSkipped = Math.max(0, allVisual.length - head.length);
-        }
-        out.push(...cache.promptLines);
-        if ((cache.promptSkipped ?? 0) > 0) {
-          out.push(truncateToWidth(ellipsisLine(cache.promptSkipped!), width, "..."));
-        }
-      }
-
-      // Find trailing tool calls (those that ran AFTER the last text_delta)
-      const { trailingToolIds, hasAnyText } = findTrailingTools(details.executionEvents || []);
-
-      const responseText = agentText || (isPartial ? "" : "");
-      if (responseText || isPartial) {
-        const agentLabel = `${details.agentName ?? "Agent"}:`;
-        out.push(truncateToWidth(theme.fg("toolTitle", agentLabel), width, "..."));
-        const PREVIEW_LINES = readPreviewSettings().previewLines;
-        if (cache.width !== width) {
-          const preview = truncateToVisualLines(responseText, PREVIEW_LINES, width - indent.length);
-          cache.responseLines = preview.visualLines.map((l) => truncateToWidth(indent + l, width, "..."));
-          cache.skipped = preview.skippedCount;
-          cache.width = width;
-        }
-        out.push(...(cache.responseLines ?? []));
-        if ((cache.skipped ?? 0) > 0) {
-          out.push(truncateToWidth(ellipsisLine(cache.skipped!), width, "..."));
-        }
-      }
-
-      // Show trailing tool calls (those that ran after the last text block)
-      // If no text yet, show all tools to indicate progress.
-      const toolsToShow = hasAnyText
-        ? toolCalls.filter((t) => trailingToolIds.includes(t.id))
-        : toolCalls;
-      for (let i = 0; i < toolsToShow.length; i++) {
-        const t = toolsToShow[i]!;
-        const isLast = i === toolsToShow.length - 1;
-        const connector = theme.fg("muted", isLast ? "└─ " : "├─ ");
-        out.push(truncateToWidth(indent + connector + toolRow(t), width, "..."));
-      }
-
+      // Collapsed view — compact status line only; full detail is in the below-editor widget
+      const agentLabel = details.agentName ?? "Subagent";
       const status = statusLine();
-      const totalSkipped = (cache.skipped ?? 0) + (cache.promptSkipped ?? 0);
-      const expandHint = !expanded ? keyHint("app.tools.expand", "verbose") : "";
-      const statusWithHint = [status, expandHint].filter(Boolean).join("  ");
-      if (statusWithHint) out.push(truncateToWidth(statusWithHint, width, "..."));
-      if (details.running && !details.backgroundJobId)
-        out.push(truncateToWidth(theme.fg("dim", "Ctrl+Shift+B: move to background"), width, "..."));
-
+      const expandHint = keyHint("app.tools.expand", "verbose");
+      out.push(truncateToWidth(
+        [agentLabel, status, expandHint].filter(Boolean).join(" · "),
+        width, "...",
+      ));
       return out;
     },
   };

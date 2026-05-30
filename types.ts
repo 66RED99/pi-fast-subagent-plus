@@ -55,3 +55,17 @@ export type OnUpdate = (partial: {
   content: [{ type: "text"; text: string }];
   details: unknown;
 }) => void;
+
+export interface RunningAgentEntry {
+  id: string;
+  agentName: string;
+  taskSummary: string;
+  startedAt: number;
+  abort: () => void;
+  toolCalls: ToolCallEntry[];
+  responseText: string;
+  status: "running" | "done" | "error";
+  model?: string;
+  thinking?: string;
+  executionEvents: ExecutionEvent[];
+}
