@@ -25,6 +25,7 @@ import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { TUI } from "@earendil-works/pi-tui";
 
 import { buildSubagentToolPrompt, type AgentConfig, discoverAgents } from "./agents.js";
+import { formatThinkingLabel } from "./render.js";
 import { BackgroundJobManager } from "./background-job-manager.js";
 import type { BackgroundHandleLike, BackgroundJobResult, BackgroundSubagentJob } from "./background-types.js";
 import {
@@ -71,11 +72,11 @@ function registerAgent(entry: RunningAgentEntry): void {
 
 function unregisterAgent(id: string): void {
   _runningAgents.delete(id);
-  if (_runningAgents.size === 0 && _agentListFocused) {
+  if (_runningAgents.size === 0) {
     _agentListFocused = false;
     _agentListSelectedIdx = 0;
-  } else if (_agentListSelectedIdx > _runningAgents.size) {
-    _agentListSelectedIdx = _runningAgents.size;
+  } else if (_agentListSelectedIdx >= _runningAgents.size) {
+    _agentListSelectedIdx = _runningAgents.size - 1;
   }
   refreshAgentWidget();
 }
@@ -83,18 +84,19 @@ function unregisterAgent(id: string): void {
 function buildAgentListLines(agents: RunningAgentEntry[], theme: Theme, width: number): string[] {
   const out: string[] = [];
 
-  const mainCursor = _agentListFocused && _agentListSelectedIdx === 0 ? ">" : " ";
-  const mainBullet = theme.bold ? theme.bold("●") : "●";
-  out.push(truncateToWidth(`${mainCursor} ${mainBullet} main`, width, "..."));
-
   for (let i = 0; i < agents.length; i++) {
     const entry = agents[i]!;
-    const isSelected = _agentListFocused && _agentListSelectedIdx === i + 1;
+    const isSelected = _agentListFocused && _agentListSelectedIdx === i;
     const cursor = isSelected ? ">" : " ";
     const elapsed = formatDuration(Date.now() - entry.startedAt);
-    const left = `${cursor} ○ ${entry.agentName}   ${entry.taskSummary}`;
+    const thinkingLabel = formatThinkingLabel(entry.thinking);
+    const meta = [entry.model, thinkingLabel].filter(Boolean).join(" · ");
+    const metaSuffix = meta ? theme.fg("dim", ` [${meta}]`) : "";
+    const elapsedStr = theme.fg("dim", elapsed);
+    // agent name + meta tag on the left, elapsed on the right
+    const leftText = `${cursor} ○ ${entry.agentName}${metaSuffix}   ${entry.taskSummary}`;
     const leftWidth = Math.max(1, width - elapsed.length - 2);
-    out.push(`${truncateToWidth(left, leftWidth, "...")}  ${theme.fg("dim", elapsed)}`);
+    out.push(`${truncateToWidth(leftText, leftWidth, "...")}  ${elapsedStr}`);
   }
 
   if (_agentListFocused) {
@@ -139,14 +141,17 @@ function openAgentDetailOverlay(entry: RunningAgentEntry): void {
         const botBorder = `╰${"─".repeat(width - 2)}╯`;
 
         const elapsed = formatDuration(Date.now() - entry.startedAt);
-        const modelPart = entry.model ? ` · ${entry.model}` : "";
+        const thinkingLabel = formatThinkingLabel(entry.thinking);
+        const metaParts = [entry.model, thinkingLabel].filter(Boolean);
+        const metaLine = metaParts.length ? theme.fg("dim", metaParts.join(" · ")) : "";
 
         const lines: string[] = [];
         lines.push(bline(""));
         lines.push(bline("Task:"));
         lines.push(bline(`  ${entry.taskSummary}`));
         lines.push(bline(""));
-        lines.push(bline(`Status: ${entry.status} · ${elapsed}${modelPart}`));
+        lines.push(bline(`Status: ${entry.status} · ${elapsed}`));
+        if (metaLine) lines.push(bline(`Model:  ${metaLine}`));
         if (entry.toolCalls.length > 0) {
           lines.push(bline(""));
           lines.push(bline("Recent tool calls:"));
@@ -524,6 +529,8 @@ To check status, ask me to poll job ${jobId}.` }] };
             if (d) {
               registryEntry.toolCalls = d.toolCalls ?? registryEntry.toolCalls;
               registryEntry.executionEvents = d.executionEvents ?? registryEntry.executionEvents;
+              registryEntry.model = d.model ?? registryEntry.model;
+              registryEntry.thinking = d.thinking ?? registryEntry.thinking;
             }
             registryEntry.responseText = (partial.content?.[0] as any)?.text || registryEntry.responseText;
             refreshAgentWidget();
@@ -646,11 +653,9 @@ export default function (pi: ExtensionAPI) {
         return undefined;
       }
 
-      // Agent list is focused
-      const totalItems = 1 + agentList.length; // main + agents
-
+      // Agent list is focused — index is 0-based directly into agentList
       if (matchesKey(data, Key.down)) {
-        _agentListSelectedIdx = Math.min(_agentListSelectedIdx + 1, totalItems - 1);
+        _agentListSelectedIdx = Math.min(_agentListSelectedIdx + 1, agentList.length - 1);
         refreshAgentWidget();
         return { consume: true };
       }
@@ -671,22 +676,15 @@ export default function (pi: ExtensionAPI) {
         return { consume: true };
       }
       if (matchesKey(data, Key.enter)) {
-        if (_agentListSelectedIdx === 0) {
-          _agentListFocused = false;
-          refreshAgentWidget();
-        } else {
-          const entry = agentList[_agentListSelectedIdx - 1];
-          if (entry) openAgentDetailOverlay(entry);
-        }
+        const entry = agentList[_agentListSelectedIdx];
+        if (entry) openAgentDetailOverlay(entry);
         return { consume: true };
       }
       if (data === "x" || data === "X") {
-        if (_agentListSelectedIdx > 0) {
-          const entry = agentList[_agentListSelectedIdx - 1];
-          if (entry) {
-            entry.abort();
-            ctx.ui.notify(`Stopping ${entry.agentName}…`, "info");
-          }
+        const entry = agentList[_agentListSelectedIdx];
+        if (entry) {
+          entry.abort();
+          ctx.ui.notify(`Stopping ${entry.agentName}…`, "info");
         }
         return { consume: true };
       }
