@@ -109,36 +109,58 @@ function openAgentDetailOverlay(entry: RunningAgentEntry): void {
   if (_overlayOpen || !_sessionUi) return;
   _overlayOpen = true;
 
+  // Strip ANSI escape codes to get visible character width for padding.
+  const visLen = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, "").length;
+
   void _sessionUi.custom((_overlayTui, theme, _keybindings, done) => {
     return {
       render(width: number): string[] {
-        const out: string[] = [];
-        out.push(theme.fg("accent", theme.bold(entry.agentName)));
-        out.push("");
-        out.push("Task:");
-        out.push(truncateToWidth(`  ${entry.taskSummary}`, width, "..."));
-        out.push("");
+        const inner = Math.max(4, width - 4); // content width inside │ <content> │
+
+        // Build a padded bordered line: │ <content padded to inner> │
+        const bline = (text: string) => {
+          const truncated = truncateToWidth(text, inner, "...");
+          const pad = Math.max(0, inner - visLen(truncated));
+          return `│ ${truncated}${" ".repeat(pad)} │`;
+        };
+
+        // Title in top border: ╭─── agentName ───╮
+        const titleLabel = ` ${entry.agentName} `;
+        const titleLabelLen = visLen(titleLabel);
+        const sidesLen = Math.max(0, width - 2 - titleLabelLen);
+        const leftDashes = Math.floor(sidesLen / 2);
+        const rightDashes = sidesLen - leftDashes;
+        const topBorder = `╭${"─".repeat(leftDashes)}${theme.fg("accent", theme.bold(titleLabel))}${"─".repeat(rightDashes)}╮`;
+        const botBorder = `╰${"─".repeat(width - 2)}╯`;
+
         const elapsed = formatDuration(Date.now() - entry.startedAt);
         const modelPart = entry.model ? ` · ${entry.model}` : "";
-        out.push(`Status: ${entry.status} · ${elapsed}${modelPart}`);
+
+        const lines: string[] = [];
+        lines.push(bline(""));
+        lines.push(bline("Task:"));
+        lines.push(bline(`  ${entry.taskSummary}`));
+        lines.push(bline(""));
+        lines.push(bline(`Status: ${entry.status} · ${elapsed}${modelPart}`));
         if (entry.toolCalls.length > 0) {
-          out.push("");
-          out.push("Recent tool calls:");
+          lines.push(bline(""));
+          lines.push(bline("Recent tool calls:"));
           for (const tc of entry.toolCalls.slice(-8)) {
             const st = tc.result !== undefined ? (tc.isError ? "✗" : "✓") : "…";
-            out.push(truncateToWidth(`  ${st} ${tc.name}(${tc.argSummary})`, width, "..."));
+            lines.push(bline(`  ${st} ${tc.name}(${tc.argSummary})`));
           }
         }
         if (entry.responseText) {
-          out.push("");
-          out.push("Response:");
+          lines.push(bline(""));
+          lines.push(bline("Response:"));
           for (const l of entry.responseText.split("\n").slice(0, 8)) {
-            out.push(truncateToWidth(`  ${l}`, width, "..."));
+            lines.push(bline(`  ${l}`));
           }
         }
-        out.push("");
-        out.push(theme.fg("dim", "ESC or Enter to close"));
-        return out;
+        lines.push(bline(""));
+        lines.push(bline(theme.fg("dim", "ESC or Enter to close")));
+
+        return [topBorder, ...lines, botBorder];
       },
       invalidate() {},
       handleInput(data: string) {
