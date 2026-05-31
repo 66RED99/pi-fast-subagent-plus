@@ -54,10 +54,14 @@ let _agentListFocused = false;
 let _agentListSelectedIdx = 0;
 let _overlayOpen = false;
 let _tui: TUI | null = null;
+let _overlayTui: TUI | null = null;
 let _inputUnsubscribe: (() => void) | null = null;
+
+const AGENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 function refreshAgentWidget(): void {
   _tui?.requestRender();
+  _overlayTui?.requestRender();
 }
 
 function registerAgent(entry: RunningAgentEntry): void {
@@ -112,7 +116,8 @@ function openAgentDetailOverlay(entry: RunningAgentEntry): void {
   // Strip ANSI escape codes to get visible character width for padding.
   const visLen = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, "").length;
 
-  void _sessionUi.custom((_overlayTui, theme, _keybindings, done) => {
+  void _sessionUi.custom((overlayTui, theme, _keybindings, done) => {
+    _overlayTui = overlayTui;
     return {
       render(width: number): string[] {
         const inner = Math.max(4, width - 4); // content width inside │ <content> │
@@ -172,6 +177,7 @@ function openAgentDetailOverlay(entry: RunningAgentEntry): void {
   }, { overlay: true, overlayOptions: { anchor: "center", width: "70%", maxHeight: "80%" } })
     .finally(() => {
       _overlayOpen = false;
+      _overlayTui = null;
       refreshAgentWidget();
     });
 }
@@ -332,6 +338,7 @@ To check status, ask me to poll job ${jobId}.` }] };
         const agentAbort = new AbortController();
         const forwardAbort = () => agentAbort.abort();
         signal?.addEventListener("abort", forwardAbort, { once: true });
+        const fgTimeout = setTimeout(() => agentAbort.abort(), AGENT_TIMEOUT_MS);
 
         // Register in the running-agents widget
         const registryId = `fg_r_${randomUUID().slice(0, 8)}`;
@@ -395,6 +402,7 @@ To check status, ask me to poll job ${jobId}.` }] };
           agentRunPromise.then((r) => { runResult = r; return "done" as const; }),
           detachPromise.then(() => "detached" as const),
         ]).finally(() => {
+          clearTimeout(fgTimeout);
           _fgJobs.delete(fgId);
           signal?.removeEventListener("abort", forwardAbort);
           ctx.ui.setStatus(FG_STATUS_KEY, undefined);
@@ -476,10 +484,11 @@ To check status, ask me to poll job ${jobId}.` }] };
           parallelAgents[i]!.status = "running";
           emitParallel(true);
 
-          // Per-agent abort controller chained to parent signal
+          // Per-agent abort controller chained to parent signal + 10-min timeout
           const taskAbort = new AbortController();
           const onParentAbort = () => taskAbort.abort();
           signal?.addEventListener("abort", onParentAbort, { once: true });
+          const taskTimeout = setTimeout(() => taskAbort.abort(), AGENT_TIMEOUT_MS);
 
           // Registry entry for widget
           const registryId = `par_${randomUUID().slice(0, 8)}`;
@@ -529,6 +538,7 @@ To check status, ask me to poll job ${jobId}.` }] };
             agentOnUpdate,
             parentDepth,
           );
+          clearTimeout(taskTimeout);
           signal?.removeEventListener("abort", onParentAbort);
           registryEntry.status = result.exitCode === 0 ? "done" : "error";
           unregisterAgent(registryId);
@@ -704,6 +714,7 @@ export default function (pi: ExtensionAPI) {
     _inputUnsubscribe = null;
     _sessionUi = null;
     _tui = null;
+    _overlayTui = null;
     _agentListFocused = false;
     _agentListSelectedIdx = 0;
     _overlayOpen = false;
