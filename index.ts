@@ -300,7 +300,6 @@ To check status, ask me to poll job ${bgJobId}.` }] };
           const handle: BackgroundHandleLike = { abort: () => bgAbort.abort() };
           const resultPromise: Promise<BackgroundJobResult> = runAgent(
             agent, params.task, cwd, effectiveModel, bgAbort.signal, undefined,
-            undefined, { mainModelFallback: ctx.model },
           ).then((r) => ({ summary: r.output, exitCode: r.exitCode, error: r.error, model: r.model }));
           const jobId = getBgManager().adoptHandle(agent.name, params.task, cwd, handle, resultPromise);
           return { content: [{ type: "text", text: `Background job started: ${jobId}
@@ -348,7 +347,6 @@ To check status, ask me to poll job ${jobId}.` }] };
 
         const agentRunPromise: Promise<RunResult> = runAgent(
           agent, params.task, cwd, effectiveModel, agentAbort.signal, wrappedOnUpdate,
-          undefined, { mainModelFallback: ctx.model },
         );
 
         const bgResultPromise: Promise<BackgroundJobResult> = agentRunPromise
@@ -498,7 +496,6 @@ To check status, ask me to poll job ${jobId}.` }] };
             taskAbort.signal,
             agentOnUpdate,
             parentDepth,
-            { mainModelFallback: ctx.model },
           );
           signal?.removeEventListener("abort", onParentAbort);
           registryEntry.status = result.exitCode === 0 ? "done" : "error";
