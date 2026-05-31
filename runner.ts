@@ -136,6 +136,31 @@ export async function runAgent(
     }
   }
 
+  // Pre-flight: configured model not in registry → use fallbackModel instead of
+  // silently falling through to the system default.
+  if (modelStr && !resolvedModel && agent.fallbackModel && !deps._isRetry) {
+    loaderLease.release();
+    if (createPrevEnvDepth === undefined) delete process.env[DEPTH_ENV];
+    else process.env[DEPTH_ENV] = createPrevEnvDepth;
+    onUpdate?.({
+      content: [{ type: "text", text: "" }],
+      details: {
+        agentName: agent.name,
+        task,
+        usage: { input: 0, output: 0, cost: 0, turns: 0 },
+        running: true,
+        elapsedMs: 0,
+        model: agent.fallbackModel,
+        thinking: agent.thinking,
+        toolCalls: [],
+      } satisfies SubagentDetails,
+    });
+    return runAgent({ ...agent, model: agent.fallbackModel }, task, cwd, undefined, signal, onUpdate, parentDepth, {
+      ...deps,
+      _isRetry: true,
+    });
+  }
+
   let session: Awaited<ReturnType<typeof createAgentSession>>["session"];
   try {
     const created = await createAgentSession({
