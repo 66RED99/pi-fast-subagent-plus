@@ -418,10 +418,18 @@ To check status, ask me to poll job ${jobId}.` }] };
       // ── Parallel mode ───────────────────────────────────────────────────
       if (params.tasks && params.tasks.length > 0) {
         const agentByName = new Map(agents.map((a) => [a.name, a]));
-        const expanded: Array<{ agent: string; task: string; model?: string; thinking?: string; cwd?: string }> = [];
+        const expanded: Array<{ agent: string; task: string; model?: string; fallbackModel?: string; thinking?: string; cwd?: string }> = [];
         for (const t of params.tasks) {
           const n = t.count ?? 1;
-          for (let i = 0; i < n; i++) expanded.push({ agent: t.agent, task: t.task, model: t.model, thinking: agentByName.get(t.agent)?.thinking, cwd: t.cwd });
+          const agentDef = agentByName.get(t.agent);
+          for (let i = 0; i < n; i++) expanded.push({
+            agent: t.agent,
+            task: t.task,
+            model: t.model,
+            fallbackModel: t.fallbackModel ?? agentDef?.fallbackModel,
+            thinking: agentDef?.thinking,
+            cwd: t.cwd,
+          });
         }
 
         const concurrency = params.concurrency ?? 4;
@@ -466,14 +474,16 @@ To check status, ask me to poll job ${jobId}.` }] };
           };
           registerAgent(registryEntry);
 
-          const { agent, error } = findAgent(t.agent);
-          if (error || !agent) {
+          const { agent: foundAgent, error } = findAgent(t.agent);
+          if (error || !foundAgent) {
             signal?.removeEventListener("abort", onParentAbort);
             unregisterAgent(registryId);
             parallelAgents[i]!.status = "error";
             emitParallel(true);
             return { agentName: t.agent, output: "", exitCode: 1, error, model: undefined, toolCalls: [] as ToolCallEntry[], usage: emptyUsage };
           }
+          // Merge per-task fallbackModel override into agent config
+          const agent = t.fallbackModel ? { ...foundAgent, fallbackModel: t.fallbackModel } : foundAgent;
           const agentStart = Date.now();
           const agentOnUpdate: OnUpdate = (partial) => {
             const d = partial.details as SubagentDetails | undefined;

@@ -66,6 +66,8 @@ export function getCurrentDepth(): number {
 
 export interface RunAgentDeps {
   loaderPool?: LoaderPool;
+  /** Internal flag: prevents infinite retry when fallback itself fails. */
+  _isRetry?: boolean;
 }
 
 export async function runAgent(
@@ -352,6 +354,28 @@ export async function runAgent(
     else process.env[MAX_DEPTH_ENV] = prevEnvMaxDepth;
     _currentDepth = prevDepth;
     _currentMaxDepth = prevMaxDepth;
+  }
+
+  // If the run failed, a fallback model is configured, and this isn't already a retry — try once more.
+  if (exitCode !== 0 && !signal?.aborted && agent.fallbackModel && !deps._isRetry) {
+    const fallbackAgent: typeof agent = { ...agent, model: agent.fallbackModel };
+    onUpdate?.({
+      content: [{ type: "text", text: "" }],
+      details: {
+        agentName: agent.name,
+        task,
+        usage,
+        running: true,
+        elapsedMs: 0,
+        model: agent.fallbackModel,
+        thinking: agent.thinking,
+        toolCalls: [],
+      } satisfies SubagentDetails,
+    });
+    return runAgent(fallbackAgent, task, cwd, undefined, signal, onUpdate, parentDepth, {
+      ...deps,
+      _isRetry: true,
+    });
   }
 
   return { output: lastOutput, exitCode, error, model: detectedModel, toolCalls, executionEvents, usage };

@@ -31,6 +31,8 @@ export interface AgentConfig {
   name: string;
   description: string;
   model?: string;
+  /** Fallback model to use if the primary model fails (e.g. rate limit, unsupported). Format: provider/model-id */
+  fallbackModel?: string;
   thinking?: ThinkingLevel;
   tools: AgentTools;
   /** Number of nested subagent generations this agent may spawn. Default: 0. */
@@ -140,6 +142,7 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
         name: frontmatter.name,
         description: frontmatter.description,
         model: frontmatter.model,
+        fallbackModel: frontmatter.fallbackModel ?? frontmatter.fallback_model ?? frontmatter.fallback,
         thinking,
         tools,
         maxDepth,

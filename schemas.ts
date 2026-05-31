@@ -8,6 +8,7 @@ const TaskItem = Type.Object({
   agent: Type.String({ description: "Agent name" }),
   task: Type.String({ description: "Task to delegate" }),
   model: Type.Optional(Type.String({ description: "Model override (provider/model)" })),
+  fallbackModel: Type.Optional(Type.String({ description: "Fallback model if primary fails (provider/model)" })),
   cwd: Type.Optional(Type.String({ description: "Working directory" })),
   count: Type.Optional(Type.Number({ description: "Repeat this task N times" })),
 });
