@@ -363,8 +363,13 @@ export async function runAgent(
     _currentMaxDepth = prevMaxDepth;
   }
 
-  // If the run failed, a fallback model is configured, and this isn't already a retry — try once more.
-  if (exitCode !== 0 && !signal?.aborted && agent.fallbackModel && !deps._isRetry) {
+  // Silent failure: model "succeeded" (no throw) but produced no output and made no
+  // tool calls. This happens when the ChatGPT OAuth provider hits quota and returns an
+  // empty response instead of throwing — exitCode stays 0 but nothing was done.
+  const silentFailure = exitCode === 0 && !lastOutput && toolCalls.length === 0;
+
+  // Trigger fallback on explicit error OR silent failure.
+  if ((exitCode !== 0 || silentFailure) && !signal?.aborted && agent.fallbackModel && !deps._isRetry) {
     const fallbackAgent: typeof agent = { ...agent, model: agent.fallbackModel };
     onUpdate?.({
       content: [{ type: "text", text: "" }],

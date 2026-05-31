@@ -523,7 +523,10 @@ To check status, ask me to poll job ${jobId}.` }] };
           (acc, r) => ({ input: acc.input + r.usage.input, output: acc.output + r.usage.output, cost: acc.cost + r.usage.cost, turns: acc.turns + r.usage.turns }),
           emptyUsage,
         );
-        const outputs = allResults.map((r) => `[${r.agentName}] ${r.exitCode === 0 ? "✓" : "✗"}\n${getFinalText(r)}`).join("\n\n");
+        const outputs = allResults.map((r) => {
+          const modelTag = r.model ? ` (${r.model})` : "";
+          return `[${r.agentName}]${modelTag} ${r.exitCode === 0 ? "✓" : "✗"}\n${getFinalText(r)}`;
+        }).join("\n\n");
 
         return {
           content: [{ type: "text", text: outputs }],
