@@ -291,12 +291,19 @@ export async function runAgent(
     }
     if (msg.model) detectedModel = msg.model;
 
+    // Prefer msg.content text (authoritative final state) over streaming deltas.
+    // Fall back to currentDelta only when msg.content has no non-empty text part.
+    // Never overwrite lastOutput with an empty string — tool-call-only messages
+    // often have content:[{type:"text",text:""}] which should not clear prior output.
+    let turnText: string | undefined;
     for (const part of msg.content ?? []) {
-      if (part.type === "text") {
-        lastOutput = part.text;
+      if (part.type === "text" && part.text) {
+        turnText = part.text;
         break;
       }
     }
+    if (!turnText && currentDelta) turnText = currentDelta;
+    if (turnText) lastOutput = turnText;
     currentDelta = "";
 
     onUpdate?.({
