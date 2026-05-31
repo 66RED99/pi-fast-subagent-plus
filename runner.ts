@@ -66,6 +66,8 @@ export function getCurrentDepth(): number {
 
 export interface RunAgentDeps {
   loaderPool?: LoaderPool;
+  /** Parent session's resolved Model object, used as fallback when agent.model isn't in the registry. */
+  mainModelFallback?: unknown;
 }
 
 export async function runAgent(
@@ -132,6 +134,12 @@ export async function runAgent(
     if (provider && modelId) {
       resolvedModel = modelRegistry.find(provider, modelId) ?? undefined;
     }
+  }
+  // Fall back to the parent session's model when the agent's model isn't in the registry.
+  // Without this, createAgentSession falls back to settings.defaultProvider/defaultModel
+  // (e.g. a local llama-server) instead of inheriting the model the user is actively running.
+  if (!resolvedModel && deps.mainModelFallback) {
+    resolvedModel = deps.mainModelFallback as ReturnType<typeof modelRegistry.find>;
   }
 
   let session: Awaited<ReturnType<typeof createAgentSession>>["session"];
