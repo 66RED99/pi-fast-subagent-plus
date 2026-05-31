@@ -55,7 +55,6 @@ let _agentListSelectedIdx = 0;
 let _overlayOpen = false;
 let _tui: TUI | null = null;
 let _inputUnsubscribe: (() => void) | null = null;
-let _capturedTheme: Theme | null = null;
 
 function refreshAgentWidget(): void {
   _tui?.requestRender();
@@ -377,6 +376,9 @@ To check status, ask me to poll job ${jobId}.` }] };
           _fgJobs.delete(fgId);
           signal?.removeEventListener("abort", forwardAbort);
           ctx.ui.setStatus(FG_STATUS_KEY, undefined);
+          if (runResult !== null) {
+            registryEntry.status = runResult.exitCode === 0 ? "done" : "error";
+          }
           unregisterAgent(registryId);
         });
 
@@ -569,7 +571,6 @@ export default function (pi: ExtensionAPI) {
     // Register below-editor widget (component factory form captures tui + theme)
     ctx.ui.setWidget("fast-subagent-list", (tui, theme) => {
       _tui = tui;
-      _capturedTheme = theme;
       return {
         render(width: number): string[] {
           const agents = [..._runningAgents.values()];
@@ -668,7 +669,6 @@ export default function (pi: ExtensionAPI) {
     _inputUnsubscribe = null;
     _sessionUi = null;
     _tui = null;
-    _capturedTheme = null;
     _agentListFocused = false;
     _agentListSelectedIdx = 0;
     _overlayOpen = false;
