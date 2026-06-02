@@ -126,7 +126,9 @@ export async function runAgent(
     agent.systemPrompt || undefined,
   );
 
-  const modelStr = modelOverride ?? agent.model;
+  // "auto" is a sentinel the LLM sometimes emits meaning "no preference" — ignore it.
+  const effectiveOverride = (modelOverride && modelOverride.toLowerCase() !== "auto") ? modelOverride : undefined;
+  const modelStr = effectiveOverride ?? agent.model;
   let resolvedModel: ReturnType<typeof modelRegistry.find> | undefined = undefined;
   if (modelStr) {
     const [provider, ...rest] = modelStr.split("/");
@@ -306,8 +308,7 @@ export async function runAgent(
     if (event.type !== "message_end" || !event.message) return;
     const msg = event.message;
     if (msg.role !== "assistant") return;
-
-    usage.turns++;
+      usage.turns++;
     const u = msg.usage;
     if (u) {
       usage.input += u.input ?? 0;

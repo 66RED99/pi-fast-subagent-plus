@@ -7,7 +7,7 @@ import { Type } from "typebox";
 const TaskItem = Type.Object({
   agent: Type.String({ description: "Agent name" }),
   task: Type.String({ description: "Task to delegate" }),
-  model: Type.Optional(Type.String({ description: "Model override (provider/model)" })),
+  model: Type.Optional(Type.String({ description: "OPTIONAL: override the agent's configured model (format: provider/model-id). Leave unset to use the agent's built-in model." })),
   fallbackModel: Type.Optional(Type.String({ description: "Fallback model if primary fails (provider/model)" })),
   cwd: Type.Optional(Type.String({ description: "Working directory" })),
   count: Type.Optional(Type.Number({ description: "Repeat this task N times" })),
@@ -17,7 +17,7 @@ export const SubagentParams = Type.Object({
   // Single mode
   agent: Type.Optional(Type.String({ description: "Agent name (single mode)" })),
   task: Type.Optional(Type.String({ description: "Task (single mode)" })),
-  model: Type.Optional(Type.String({ description: "Model override (single mode)" })),
+  model: Type.Optional(Type.String({ description: "OPTIONAL: override the agent's configured model (format: provider/model-id). Leave unset to use the agent's built-in model." })),
   cwd: Type.Optional(Type.String({ description: "Working directory" })),
 
   // Parallel mode
