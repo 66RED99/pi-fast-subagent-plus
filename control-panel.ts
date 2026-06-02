@@ -29,7 +29,6 @@ export interface FastSubagentPanelOptions {
   getBackgroundJobs: () => BackgroundSubagentJob[];
   getRunningBackgroundJobs: () => BackgroundSubagentJob[];
   getForegroundJobs: () => ForegroundPanelJob[];
-  writeDebugPrompt: () => Promise<string>;
   cancelBackgroundJob: (jobId: string) => "cancelled" | "not_found" | "already_done";
 }
 
@@ -532,26 +531,6 @@ export async function openFastSubagentPanel(options: FastSubagentPanelOptions): 
           onAfterAction: refreshValues,
           onClose: () => closeSubmenu(),
         }),
-      },
-      {
-        id: "debug-prompt",
-        label: "Debug prompt",
-        description: "Write the live system prompt to ~/.pi/agent/debug/fast-subagent-system-prompt.txt.",
-        currentValue: "ready",
-        submenu: (_currentValue, closeSubmenu) => new ActionConfirmSubmenu(
-          theme,
-          "Debug Prompt",
-          "Write the live system prompt to the debug directory.",
-          "to write",
-          async () => {
-            const debugFile = await options.writeDebugPrompt();
-            return {
-              body: `Live system prompt written to ${debugFile}.`,
-            };
-          },
-          () => closeSubmenu(),
-          () => tui.requestRender(),
-        ),
       },
     ];
 

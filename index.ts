@@ -9,8 +9,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
   AgentToolResult,
@@ -197,16 +196,6 @@ function getBgManager(): BackgroundJobManager {
 function refreshBgStatus(): void {
   const running = getBgManager().getRunningJobs();
   _setBgStatus?.(running.length > 0 ? `⧗ ${running.length} bg agent${running.length > 1 ? "s" : ""}` : undefined);
-}
-
-async function writeDebugPrompt(ctx: ExtensionCommandContext): Promise<string> {
-  await ctx.waitForIdle();
-  const prompt = ctx.getSystemPrompt();
-  const debugDir = join(getAgentDir(), "debug");
-  const debugFile = join(debugDir, "fast-subagent-system-prompt.txt");
-  mkdirSync(debugDir, { recursive: true });
-  writeFileSync(debugFile, prompt, "utf8");
-  return debugFile;
 }
 
 function registerSubagentTool(pi: ExtensionAPI): void {
@@ -758,7 +747,6 @@ export default function (pi: ExtensionAPI) {
           task: entry.task,
           detach: entry.detach,
         })),
-        writeDebugPrompt: () => writeDebugPrompt(ctx),
         cancelBackgroundJob: (jobId) => getBgManager().cancel(jobId),
       });
     },
