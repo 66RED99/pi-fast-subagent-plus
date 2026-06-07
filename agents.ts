@@ -63,11 +63,12 @@ export function buildSubagentToolPrompt(): SubagentToolPrompt {
     description: "Spawn subagents for delegated work. Results are returned directly in this tool call — no polling required.",
     promptSnippet: "Spawn subagents for delegated work",
     promptGuidelines: [
-      "For simple, trivial tasks, use tools yourself; otherwise, always prefer subagents whenever a suitable subagent exists.",
+      "MANDATORY: Delegate web research and codebase exploration tasks to subagents. Use the researcher agent for web research and the scout agent for codebase exploration.",
+      "Use built-in tools for simple tasks (read files, grep, quick lookups). Only delegate non-trivial work (multi-step exploration, investigation) to subagents.",
       "Use { action: 'list' } to inspect available agents before choosing one.",
-      "Use single mode for one focused delegated task and parallel mode for independent delegated tasks.",
-      "Results are returned directly in the tool response — do NOT call action:'poll' or action:'status' after a foreground subagent call. The tool result IS the output.",
-      "action:'poll', action:'status', action:'cancel' are ONLY for background jobs (background:true). Never call them for standard (foreground) subagent execution.",
+      "Use single mode for one delegated task, parallel mode for independent tasks.",
+      "Results are returned directly — do NOT call poll/status after a foreground subagent call.",
+      "poll/status/cancel are ONLY for background jobs (background:true).",
     ],
   };
 }
