@@ -136,6 +136,13 @@ export async function runAgent(
     if (provider && modelId) {
       resolvedModel = modelRegistry.find(provider, modelId) ?? undefined;
     }
+    // Fallback: some providers (e.g. OpenRouter) use slash-separated IDs like
+    // "deepseek/deepseek-v4-flash" — splitting on "/" loses the prefix.
+    // Search all models for an exact match against the full string or provider/modelId combo.
+    if (!resolvedModel && modelStr.includes("/")) {
+      const allModels = modelRegistry.getAll();
+      resolvedModel = (allModels.find((m) => `${m.provider}/${m.id}` === modelStr) ?? undefined);
+    }
   }
 
   // Pre-flight: configured model not in registry → use fallbackModel instead of

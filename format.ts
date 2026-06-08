@@ -1,23 +1,16 @@
 /**
- * Pure formatting helpers used by runner + render + command layers.
+ * Pure formatting helpers used by runner + render layers.
  */
 
 import type { AgentConfig } from "./agents.js";
-import type { BackgroundSubagentJob } from "./background-types.js";
 import type { RunResult } from "./types.js";
-
-export function formatTools(tools: AgentConfig["tools"]): string {
-  if (tools === "all") return "all";
-  if (tools === "builtins") return "builtins (default)";
-  if (tools === "none") return "none";
-  return tools.join(", ");
-}
 
 export function shortPath(p: unknown): string {
   if (typeof p !== "string") return "";
   const cwd = process.cwd();
   if (p.startsWith(cwd + "/")) return p.slice(cwd.length + 1);
-  return p.replace(/^\/Users\/[^/]+\/[^/]+\//, "");
+  // Linux home directory shortening: /home/<user>/... → <user>/...
+  return p.replace(/^\/home\/[^/]+\//, "");
 }
 
 export function summarizeToolArgs(toolName: unknown, toolInput: unknown): string {
@@ -77,16 +70,6 @@ export function formatDuration(ms: number): string {
   return m > 0 ? `${m}m ${rem}s` : `${rem}s`;
 }
 
-export function summarizeTask(task: string, max = 60): string {
-  return task.length > max ? task.slice(0, max - 3) + "..." : task;
-}
-
-export function formatTokens(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 10000) return `${(n / 1000).toFixed(1)}k`;
-  return `${Math.round(n / 1000)}k`;
-}
-
 export function formatUsage(usage: RunResult["usage"], model?: string): string {
   const parts: string[] = [];
   if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`);
@@ -102,18 +85,8 @@ export function getFinalText(r: RunResult): string {
   return r.output || "(no output)";
 }
 
-export function formatBgJobSummary(job: BackgroundSubagentJob, now = Date.now()): string {
-  const dur = job.completedAt ? formatDuration(job.completedAt - job.startedAt) : formatDuration(now - job.startedAt);
-  return `${job.id} [${job.status}] ${job.agentName} · ${dur} · ${summarizeTask(job.task)}`;
-}
-
-export function formatBgJobDetails(job: BackgroundSubagentJob, now = Date.now()): string {
-  const dur = job.completedAt ? formatDuration(job.completedAt - job.startedAt) : formatDuration(now - job.startedAt);
-  const lines = [`${job.id} [${job.status}] ${job.agentName} · ${dur}`, `Task: ${job.task}`];
-  if (job.model) lines.push(`Model: ${job.model}`);
-  if (job.status === "completed") lines.push(`\nResult:\n${job.resultSummary ?? "(no output)"}`);
-  if (job.status === "failed") lines.push(`\nError: ${job.error ?? "(unknown)"}`);
-  if (job.status === "cancelled") lines.push("\nCancelled.");
-  if (job.status === "running") lines.push("\nStill running.");
-  return lines.join("\n");
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 10000) return `${(n / 1000).toFixed(1)}k`;
+  return `${Math.round(n / 1000)}k`;
 }

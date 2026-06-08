@@ -182,10 +182,6 @@ export function renderSubagentResult(
       return `${call}${t.isError ? " ✗" : ` ✓${dur}`}`;
     }
 
-    function wrapL(text: string, w: number): string[] {
-      try { return wrapTextWithAnsi(text, w); } catch { return [truncateToWidth(text, w, "...")]; }
-    }
-
     const cache: { width?: number } = {};
     return {
       invalidate() { cache.width = undefined; },
@@ -231,8 +227,6 @@ export function renderSubagentResult(
             : formatUsage(details.usage ?? { input: 0, output: 0, cost: 0, turns: 0 }, details.model);
           const expandHint = keyHint("app.tools.expand", "verbose");
           out.push(truncateToWidth([header, status, expandHint].filter(Boolean).join(" · "), width, "..."));
-          // Suppress unused warning
-          void wrapL;
           return out;
         }
 
@@ -246,8 +240,6 @@ export function renderSubagentResult(
             })();
         const expandHint = keyHint("app.tools.expand", "expand for full output");
         out.push(truncateToWidth([status, expandHint].filter(Boolean).join("  "), width, "..."));
-        // Suppress unused warning
-        void wrapL;
         return out;
       },
     };
